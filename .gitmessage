@@ -1,0 +1,55 @@
+# <tipo>(<scope>): <mensaje>
+
+# Ejemplo:
+# feat(stream): agregar parser SSE incremental
+
+# ─────────────────────────────────────────────
+
+# Qué cambió
+# -
+
+# Por qué
+# -
+
+# Observaciones / aprendizajes
+# -
+
+# Dudas / problemas abiertos
+# -
+
+# ─────────────────────────────────────────────
+
+# Tipos
+# feat       nueva funcionalidad
+# fix        corrección
+# refactor   reorganización interna
+# docs       documentación
+# research   análisis / investigación
+# experiment pruebas exploratorias
+# chore      tooling / configuración
+
+# Scopes
+# cli
+# ui
+# stream
+# sse
+# runtime
+# loop
+# tools
+# bash
+# filesystem
+# orchestrator
+# auth
+# specs
+# tasks
+# renderer
+# db
+# monorepo
+
+# ─────────────────────────────────────────────
+
+# Reglas personales
+# commits pequeños y coherentes
+# explicar decisiones, no solo cambios
+# registrar aprendizajes importantes
+# evitar commits gigantes
