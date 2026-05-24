@@ -90,9 +90,11 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
 
         if (showCommandMenu) {
             const command = resolveCommand(selectedIndex);
-            handleCommand(command);
-
-            return;
+            if (command) {
+                handleCommand(command);
+                return;
+            }
+            // No command matched: treat it as normal text submission.
         }
 
         handleSubmit();
