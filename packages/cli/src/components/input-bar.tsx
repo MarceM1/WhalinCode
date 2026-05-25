@@ -7,6 +7,7 @@ import { Statusbar } from "./status-bar";
 import { CommandMenu } from "./command-menu";
 import type { Command } from './command-menu/types';
 import { useCommandMenu } from './command-menu/use-command-menu';
+import { useToast } from '../providers/toast';
 
 type Props = {
     onSubmit: (text: string) => void;
@@ -24,6 +25,7 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
     const textareaRef = useRef<TextareaRenderable | null>(null);
     const onSubmitRef = useRef<() => void>(() => { });
     const renderer = useRenderer();
+    const toast = useToast();
 
     const {
         showCommandMenu,
@@ -34,11 +36,6 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
         resolveCommand,
         setSelectedIndex
     } = useCommandMenu();
-
-    const handleCommandExecute = useCallback((index: number) => {
-        const command = resolveCommand(index);
-        handleCommand(command);
-    }, []);
 
     const handleTextareaContentChange = useCallback(() => {
         const textarea = textareaRef.current;
@@ -69,11 +66,17 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
         if (command.action) {
             command.action({
                 exit: () => renderer.destroy(),
+                toast,
             });
         } else {
             textarea.insertText(command.value + ' ');
         }
-    }, [renderer]);
+    }, [renderer, toast]);
+
+    const handleCommandExecute = useCallback((index: number) => {
+        const command = resolveCommand(index);
+        handleCommand(command);
+    }, [handleCommand, resolveCommand]);
 
     // Wire up textarea submit handler once so it always reads the latest state.
     useEffect(() => {
