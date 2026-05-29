@@ -32,7 +32,7 @@ export function DialogSearchList<T>({
     const inputRef = useRef<InputRenderable | null>(null);
     const scrollRef = useRef<ScrollBoxRenderable | null>(null);
     const { isTopLayer } = useKeyboardLayer();
-    const {colors}= useTheme();
+    const { colors } = useTheme();
 
     const handleContentChange = useCallback(() => {
         const text = inputRef.current?.value ?? '';
@@ -51,6 +51,9 @@ export function DialogSearchList<T>({
 
     useKeyboard((key) => {
         if (!isTopLayer('dialog')) return;
+        const isNavKey =
+            key.name === 'return' || key.name === 'enter' || key.name === 'up' || key.name === 'down';
+        if (isNavKey && filtered.length === 0) return;
 
         if (key.name === 'return' || key.name === 'enter') {
             const item = filtered[selectedIndex];

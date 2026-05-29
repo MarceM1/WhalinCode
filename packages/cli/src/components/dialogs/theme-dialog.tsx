@@ -50,7 +50,7 @@ export const ThemeDialogContent = () => {
             )}
             getKey={(theme) => theme.name}
             placeholder='Search themes...'
-            emptyText='No matches themes'
+            emptyText='No theme matches'
         />
     );
 };
