@@ -1,4 +1,3 @@
-import { EmptyBorder } from "../border";
 import { useTheme } from "../../providers/theme";
 
 type Props = {
