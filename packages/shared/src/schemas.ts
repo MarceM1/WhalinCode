@@ -1,0 +1,72 @@
+import {z} from 'zod';
+
+/**
+ * Keep the explicit key schema here because the one-argument z.record(...) form
+ * does not type-check cleanly with the zod typings used in this workspace.
+ */
+export const toolCallArgsSchema = z.record(z.string(), z.json());
+
+export const messagePartSchema = z.discriminatedUnion('type', [
+    z.object({
+        type: z.literal('reasoning'),
+        text: z.string(),
+    }),
+    z.object({
+        type: z.literal('tool-call'),
+        id: z.string(),
+        name: z.string(),
+        args: toolCallArgsSchema,
+        results: z.string().optional(),
+    }),
+    z.object({
+        type: z.literal('text'),
+        text: z.string(),
+    }),
+]);
+
+export const messagePartsSchema = z.array(messagePartSchema);
+
+export type MessagePart = z.infer<typeof messagePartSchema>;
+
+/**
+ * Tool-call args stay as nested JSON on the wire so the clien does not need
+ * a second JSON.parse step after decoding SSE event payload itself.
+ */
+
+export const chatStreamEventSchema = z.discriminatedUnion('type', [
+    z.object({
+        type: z.literal('text-delta'),
+        text: z.string(),
+    }),
+    z.object({
+        type: z.literal('reasoning-delta'),
+        text: z.string(),
+    }),
+    //que tool-call y tool-call-result compartan toolCallID es parecido al patrón clasico de sistemas distribuidos RPC correlation
+    z.object({
+        type: z.literal('tool-call'),
+        toolCallId: z.string(),
+        toolName: z.string(),
+        args: toolCallArgsSchema,
+    }),
+    z.object({
+        type: z.literal('tool-call-result'),
+        toolCallId: z.string(),
+        result: z.string(),
+    }),
+    // done define el fin del stream, y con durationMS abre la puerta a metricas, benchmarks, observabilidad, analíticas, etc
+    z.object({
+        type: z.literal('done'),
+        messageID: z.string(),
+        durationMs: z.number(),
+    }),
+    // deberia de incluir erorrMessage o errorCode? si falla algun modelo (openAi, Anthropic, etc.) o alguna llamada a un API externa, herramienta u parser, se puede incluir el error en el stream y distinguir causas
+    z.object({
+        type: z.literal('error'),
+        messageID: z.string(),
+    })
+])
+
+export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+
+
