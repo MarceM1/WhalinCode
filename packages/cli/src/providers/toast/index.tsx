@@ -4,12 +4,13 @@ import {
     useRef,
     useState,
     useCallback,
+    useMemo,
 } from 'react';
 import type { ReactNode } from 'react';
 import { useTerminalDimensions } from '@opentui/react';
 import type { ToastOptions, ToastVariant } from './types';
 import { DEFAULT_TOAST_DURATION } from './types';
-import {SplitBorderChars} from "../../components/border";
+import { SplitBorderChars } from "../../components/border";
 import { useTheme } from '../theme';
 
 export type ToastContextValue = {
@@ -61,9 +62,8 @@ export function ToastProvider({ children }: ToastProviderProps) {
     }, [clearCurrentTimeout]
     );
 
-    const value: ToastContextValue = {
-        show,
-    };
+    const value = useMemo(() => ({ show }), [show]);
+
     return (
         <ToastContext.Provider value={value}>
             {children}
@@ -106,7 +106,7 @@ function Toast({ currentToast }: ToastProps) {
             backgroundColor={colors.surface}
             borderColor={borderColor}
             border={['left', 'right']}
-            customBorderChars={SplitBorderChars }
+            customBorderChars={SplitBorderChars}
         >
             <box flexDirection="column" gap={1} width='100%'>
                 <text fg='#E1E1E1' wrapMode='word' width='100%'>{currentToast.message}</text>
