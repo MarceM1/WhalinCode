@@ -1,0 +1,20 @@
+{
+  "name": "@whalincode/server",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run --hot src/index.ts"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.8.0",
+    "@whalincode/database": "workspace:*",
+    "@whalincode/shared": "workspace:*",
+    "dotenv": "^17.4.2",
+    "hono": "^4.12.23",
+    "zod": "^4.4.3"
+  }
+}
