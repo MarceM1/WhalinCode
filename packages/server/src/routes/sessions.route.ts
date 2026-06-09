@@ -113,7 +113,6 @@ const app = new Hono()
             Sentry.logger.info('Created session', {
                 sessionId: session.id,
                 title: session.title,
-                cwd: session.cwd,
             });
 
         return c.json(session, 201);
