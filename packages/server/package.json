@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@hono/zod-validator": "^0.8.0",
+    "@sentry/bun": "^10.56.0",
+    "@sentry/hono": "^10.56.0",
     "@whalincode/database": "workspace:*",
     "@whalincode/shared": "workspace:*",
     "dotenv": "^17.4.2",

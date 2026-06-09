@@ -1,16 +1,45 @@
+import 'dotenv/config'
+
 import { Hono } from 'hono';
+import {sentry} from '@sentry/hono/bun';
+import * as Sentry from "@sentry/hono/bun";
+
 import {HTTPException} from 'hono/http-exception';
+
 import sessions from './routes/sessions.route';
 
 const app = new Hono()
 
+app.use(
+  sentry(app, {
+    dsn: process.env.SENTRY_DS,
+    tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '1.0'),,
+    enableLogs: true,
+    // To disable sending user data, uncomment the line below. For more info visit:
+    // https://docs.sentry.io/platforms/javascript/guides/hono/configuration/options/#dataCollection
+    // dataCollection: { userInfo: false },
+  }),
+);
+
 
 app.onError((error, c)=>{
     if(error instanceof HTTPException){
-        return c.json({error: error.message || "Request Failed"}, error.status)
+        Sentry.logger.warn("Handled HTTP error: ", {
+            status: error.status,
+            message: error.message || 'Request failed',
+            path: c.req.path,
+            method: c.req.method
+        });
+
+        return c.json({error: error.message || "Request failed"}, error.status);
     };
 
-    console.error('Unhandled server error: ', error);
+    Sentry.logger.error('Unhandled server error: ', {
+        status: 500,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        path: c.req.path,
+        method: c.req.method
+    });
     return c.json({error: "Internal Server Error"}, 500);
 });
 
