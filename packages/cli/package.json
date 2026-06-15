@@ -16,11 +16,14 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@whalincode/shared": "workspace:*",
     "@opentui/core": "^0.2.15",
     "@opentui/react": "^0.2.15",
+    "@whalincode/database": "workspace:*",
+    "@whalincode/shared": "workspace:*",
+    "eventsource-parser": "^3.1.0",
     "hono": "^4.12.23",
     "opentui-spinner": "^0.0.6",
+    "pretty-ms": "^9.3.0",
     "react": "^19.2.6",
     "react-router": "^7.16.0",
     "zod": "^4.4.3"
