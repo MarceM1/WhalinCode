@@ -53,7 +53,7 @@ export function SessionShell({
                     {loading ? (
                         <>
                              <Spinner/>
-                             {interruptible ? <text>esc to interrup</text> : null}
+                             {interruptible ? <text>esc to interrupt</text> : null}
                         </>
                     ) : null}
                 </box>

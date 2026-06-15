@@ -52,18 +52,24 @@ function buildConversationHistory(
 function getResumableUserMessage(
     messages:{
         role: 'USER' | 'ASSISTANT' | 'ERROR';
+        status: MessageStatus;
         model: string;
         mode: Mode
     }[],
 ) {
     const lastMessage = messages[messages.length - 1];
-    if(!lastMessage|| lastMessage.role !== 'USER') {
+    if (!lastMessage) {
         Sentry.logger.warn('Failing getting resumable user message', {
             reason: 'no_pending_user_message',
         });
         return null;
     }
-    return lastMessage;
+    if (lastMessage.role === 'USER') return lastMessage;
+    if (lastMessage.role === 'ASSISTANT' && lastMessage.status === MessageStatus.INTERRUPTED) {
+        const previousMessage = messages[messages.length - 2];
+        if (previousMessage?.role === 'USER') return previousMessage;
+    }
+    return null;
 };
 
 type StreamParams = {
@@ -120,7 +126,10 @@ async function streamAIResponse(
         if (!result) return;
 
         for await (const part of result.fullStream) {
-            if (stream.aborted) return;
+            if (stream.aborted) {
+                await persistInterrumpedMessage();
+                return;
+            };
 
             if(part.type === 'text-delta') {
                 fullText += part.text;
