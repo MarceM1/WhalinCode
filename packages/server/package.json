@@ -7,14 +7,19 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "bun run --hot src/index.ts"
+    "dev": "bun run --hot src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "postinstall": "bun run --cwd ../database db:generate"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.82",
+    "@ai-sdk/openai": "^3.0.69",
     "@hono/zod-validator": "^0.8.0",
     "@sentry/bun": "^10.56.0",
     "@sentry/hono": "^10.56.0",
     "@whalincode/database": "workspace:*",
     "@whalincode/shared": "workspace:*",
+    "ai": "^6.0.199",
     "dotenv": "^17.4.2",
     "hono": "^4.12.23",
     "zod": "^4.4.3"

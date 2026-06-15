@@ -57,13 +57,13 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
     // done define el fin del stream, y con durationMS abre la puerta a metricas, benchmarks, observabilidad, analíticas, etc
     z.object({
         type: z.literal('done'),
-        messageID: z.string(),
+        messageId: z.string(),
         durationMs: z.number(),
     }),
     // deberia de incluir erorrMessage o errorCode? si falla algun modelo (openAi, Anthropic, etc.) o alguna llamada a un API externa, herramienta u parser, se puede incluir el error en el stream y distinguir causas
     z.object({
         type: z.literal('error'),
-        messageID: z.string(),
+        message: z.string(),
     })
 ])
 

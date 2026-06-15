@@ -1,5 +1,5 @@
 import 'dotenv/config'
-
+import { env } from './config/env';
 import { Hono } from 'hono';
 import {sentry} from '@sentry/hono/bun';
 import * as Sentry from "@sentry/hono/bun";
@@ -7,13 +7,17 @@ import * as Sentry from "@sentry/hono/bun";
 import {HTTPException} from 'hono/http-exception';
 
 import sessions from './routes/sessions.route';
+import chat from './routes/chat.route';
+
 
 const app = new Hono()
 
+
+
 app.use(
   sentry(app, {
-    dsn: process.env.SENTRY_DS,
-    tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '1.0'),,
+    dsn: env.SENTRY_DSN,
+    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
     enableLogs: true,
     // To disable sending user data, uncomment the line below. For more info visit:
     // https://docs.sentry.io/platforms/javascript/guides/hono/configuration/options/#dataCollection
@@ -47,7 +51,7 @@ app.notFound((c) => {
   return c.text('Oops! Esta pagina no existe.', 404)
 })
 
-const routes = app.route('/sessions', sessions)
+const routes = app.route('/sessions', sessions).route('/chat', chat)
 
 export type AppType = typeof routes;
 
