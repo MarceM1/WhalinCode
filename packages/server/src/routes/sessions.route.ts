@@ -23,14 +23,40 @@ const createSessionSchema = z.object({
 });
 
 const createSessionValidator = zValidator ('json', createSessionSchema, (result, c)=> {
-    if(!result.success){
-        Sentry.logger.warn('Session creation validation failed', {
-            path: c.req.path,
-            issues: result.error.issues.length
-        });
+    // if(!result.success){
+    //     Sentry.logger.warn('Session creation validation failed', {
+    //         path: c.req.path,
+    //         issues: result.error.issues.length
+    //     });
 
-        return c.json({error: 'Invalid request body'}, 400);
-    }   
+    //     return c.json({error: 'Invalid request body'}, 400);
+    // }   
+//     if (!result.success) {
+//     const error = result.error;
+
+//     Sentry.logger.warn('Session creation validation failed', {
+//         path: c.req.path,
+//         issues: error.issues.length,
+//     });
+
+//     return c.json({ error: 'Invalid request body' }, 400);
+// }
+    if (result.success === false) {
+        const issues = result.error.issues.length;
+
+        Sentry.logger.warn(
+            'Session creation validation failed',
+            {
+                path: c.req.path,
+                issues,
+            }
+        );
+
+        return c.json(
+            { error: 'Invalid request body' },
+            400
+        );
+    }
 })
 
 const app = new Hono()
