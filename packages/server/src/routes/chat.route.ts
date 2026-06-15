@@ -16,14 +16,30 @@ const submitSchema = z.object({
 });
 
 const submitValidator = zValidator('json', submitSchema, (result, c)=>{
-    if(!result.success) {
-        Sentry.logger.warn('Submit validation failed', {
-            path: c.req.path,
-            issues: result.error.issues.length
-        });
+    // if(!result.success) {
+    //     Sentry.logger.warn('Submit validation failed', {
+    //         path: c.req.path,
+    //         issues: result.error.issues.length
+    //     });
 
-        return c.json({ error: 'Invalid request body' }, 400);
-    };
+    //     return c.json({ error: 'Invalid request body' }, 400);
+    // };
+    if (result.success === false) {
+            const issues = result.error.issues.length;
+    
+            Sentry.logger.warn(
+                'Submit validation failed',
+                {
+                    path: c.req.path,
+                    issues,
+                }
+            );
+    
+            return c.json(
+                { error: 'Invalid request body' },
+                400
+            );
+        }
 });
 
 const activeResumeSessionIds = new Set<string>();
