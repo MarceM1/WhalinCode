@@ -78,6 +78,7 @@ type ToastProps = {
 
 function Toast({ currentToast }: ToastProps) {
     const { width } = useTerminalDimensions();
+    console.log('Width:', width);
     const { colors } = useTheme();
 
     if (!currentToast) return null;
@@ -98,7 +99,7 @@ function Toast({ currentToast }: ToastProps) {
             alignItems="flex-start"
             top={2}
             right={2}
-            width={Math.max(1, Math.min(60, width - 6))} // Ensure width is at least 1 and at most 60, with some padding from the terminal edges
+            width={Math.max(1, Math.min(60, width - 6))}
             paddingLeft={2}
             paddingRight={2}
             paddingTop={1}

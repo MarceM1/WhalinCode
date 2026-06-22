@@ -1,4 +1,5 @@
-import { ThemeDialogContent } from "../dialogs";
+import { SUPPORTED_CHAT_MODELS } from "@whalincode/shared";
+import { SessionsDialogContent, ThemeDialogContent, AgentsDialogContent, ModelsDialogContent } from "../dialogs";
 import type { Command } from "./types";
 
 export const COMMANDS: Command[] = [
@@ -7,17 +8,17 @@ export const COMMANDS: Command[] = [
         description: 'Start a new project',
         value: '/new',
         action: (ctx) => {
-            ctx.toast.show({ message: 'Starting a new conversation...'});
+            ctx.navigate('/');
         },
     },
     {
         name: 'agents',
-        description: 'Switch between AI agents',
+        description: 'Switch agents',
         value: '/agents',
         action: (ctx) => {
             ctx.dialog.open({
-                title: 'Select an AI Agent',
-                children: <text>Agent selection coming soon...</text>
+                title: 'Select agent',
+                children: <AgentsDialogContent currentMode={ctx.mode} onSelectMode={ctx.setMode} />
             });
         },
     },
@@ -27,8 +28,11 @@ export const COMMANDS: Command[] = [
         value: '/models',
         action: (ctx) => {
             ctx.dialog.open({
-                title: 'Select an AI Model',
-                children: <text>Model selection coming soon...</text>
+                title: 'Select Model',
+                children: <ModelsDialogContent 
+                    models={SUPPORTED_CHAT_MODELS.map((model) => model.id)}
+                    onSelectModel={ctx.setModel}
+                />
             });
         },
     },
@@ -37,7 +41,10 @@ export const COMMANDS: Command[] = [
         description: 'Browse past sessions',
         value: '/sessions',
         action: (ctx) => {
-            ctx.toast.show({ message: 'Opening past sessions...'});
+            ctx.dialog.open({
+                title: 'Sessions',
+                children: <SessionsDialogContent />
+            })
         }
     },
     {
