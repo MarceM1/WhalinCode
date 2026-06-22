@@ -59,7 +59,7 @@ export const SessionsDialogContent = () => {
     const handleSelect = useCallback((session: Session) => {
         close();
         navigate(`/sessions/${session.id}`);
-    }, [navigate]);
+    }, [close, navigate]);
 
     if (loading) {
         return (
