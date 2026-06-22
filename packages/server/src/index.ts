@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { env } from './config/env.js';
+import { env } from './config/env';
 import { Hono } from 'hono';
 import {sentry} from '@sentry/hono/bun';
 import * as Sentry from "@sentry/hono/bun";
