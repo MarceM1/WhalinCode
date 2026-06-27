@@ -6,7 +6,13 @@ import { z } from 'zod';
 import { streamText as aiStreamText } from 'ai';
 import { db } from "@whalincode/database/client";
 import { Mode, MessageStatus } from '@whalincode/database/enums';
-import { type ChatStreamEvent } from '@whalincode/shared';
+import type { Message, Prisma } from '@whalincode/database';
+import { 
+    type ChatStreamEvent,
+    type MessagePart,
+    toolCallArgsSchema,
+    messagePartsSchema,
+ } from '@whalincode/shared';
 import { isSupportedChatModel, resolveChatModel } from '../lib/models';
 
 const submitSchema = z.object({
@@ -16,14 +22,7 @@ const submitSchema = z.object({
 });
 
 const submitValidator = zValidator('json', submitSchema, (result, c)=>{
-    // if(!result.success) {
-    //     Sentry.logger.warn('Submit validation failed', {
-    //         path: c.req.path,
-    //         issues: result.error.issues.length
-    //     });
-
-    //     return c.json({ error: 'Invalid request body' }, 400);
-    // };
+   
     if (result.success === false) {
             const issues = result.error.issues.length;
     
@@ -102,6 +101,7 @@ async function streamAIResponse(
 ) {
     const { sessionId, model, history, mode, abortController } = params;
     const startTime = Date.now();
+    const parts: MessagePart[]= [];
     
     Sentry.logger.info('AI generation started', {
         sessionId,
@@ -112,10 +112,17 @@ async function streamAIResponse(
     
     const resolvedModel = resolveChatModel(model);
 
-    let fullText = '';
 
     const persistInterrumpedMessage = async () => {
-        if (fullText.length === 0) return;
+        const fullText = parts
+            .filter((part) => part.type === 'text')
+            .map((part)=> part.text)
+            .join('')
+        ;
+
+        if (fullText.length === 0 && parts.length === 0) return;
+
+        const validateParts: Prisma.InputJsonValue | undefined = parts.length > 0 ? messagePartsSchema.parse(parts) : undefined;
 
         const elapsedMs = Date.now() - startTime
 
@@ -126,6 +133,7 @@ async function streamAIResponse(
                 status: MessageStatus.INTERRUPTED,
                 model,
                 content: fullText,
+                parts: validateParts,
                 mode,
                 duration: Math.round(elapsedMs / 1000) 
             },
@@ -133,10 +141,11 @@ async function streamAIResponse(
     };
 
     try {
-        const result = await aiStreamText({
+        const result =  aiStreamText({
             model: resolvedModel.model,
             messages: history,
             abortSignal: abortController.signal,
+            providerOptions: resolvedModel.providerOptions
         });
 
         if (!result) return;
@@ -147,15 +156,85 @@ async function streamAIResponse(
                 return;
             };
 
+            if (part.type === 'reasoning-delta') {
+                const last = parts[parts.length - 1];
+
+                if(last && last.type === 'reasoning') {
+                    last.text += part.text;
+                }else {
+                    parts.push({
+                        type:'reasoning',
+                        text: part.text
+                    });
+                };
+                const event: ChatStreamEvent = {type: 'reasoning-delta', text: part.text};
+                await stream.writeSSE({event: 'reasoning-delta', data: JSON.stringify(event)});
+            };
+
             if(part.type === 'text-delta') {
-                fullText += part.text;
+                const last = parts[parts.length -1];
+
+                if(last && last.type === 'text') {
+                    last.text += part.text;
+                }else {
+                    parts.push({
+                        type:'text',
+                        text: part.text
+                    });
+                };
                 const event: ChatStreamEvent = {type: 'text-delta', text: part.text};
                 await stream.writeSSE({event: 'text-delta', data: JSON.stringify(event)});
             };
 
+            if (part.type === 'tool-call') {
+                const args = toolCallArgsSchema.parse(part.input);
+
+                parts.push({
+                    type: 'tool-call',
+                    id: part.toolCallId,
+                    name: part.toolName,
+                    args,
+                });
+
+                const event: ChatStreamEvent = {
+                    type: 'tool-call',
+                    toolCallId: part.toolCallId,
+                    toolName: part.toolName,
+                    args,
+                };
+
+                await stream.writeSSE({
+                    event: 'tool-call',
+                    data: JSON.stringify(event),
+                });
+            };
+
+            if (part.type === 'tool-result') {
+                const resultStr =
+                    typeof part.output === 'string' ? part.output : JSON.stringify(part.output);
+
+                const toolCallPart = parts.find((p): p is Extract<MessagePart, {type: 'tool-call'}> => p.type === 'tool-call' && p.id === part.toolCallId);
+
+                if (toolCallPart) {
+                    toolCallPart.results  = resultStr;
+                };
+
+                const event: ChatStreamEvent = {
+                    type: 'tool-call-result',
+                    toolCallId: part.toolCallId,
+                    result: resultStr,
+                };
+
+                await stream.writeSSE({
+                    event: 'tool-call-result',
+                    data: JSON.stringify(event),
+                });
+                
+            };
+
             if (part.type === 'error') {
                 throw part.error;
-            }
+            };
         };
 
         if (stream.aborted || abortController.signal.aborted) {
@@ -165,6 +244,14 @@ async function streamAIResponse(
 
         const elapsedMs = Date.now() - startTime;
 
+        const fullText = parts
+            .filter((part) => part.type === 'text')
+            .map((part)=> part.text)
+            .join('')
+        ;
+
+        const validateParts: Prisma.InputJsonValue | undefined = parts.length > 0 ? messagePartsSchema.parse(parts) : undefined;
+
         const assistantMessage = await db.message.create({
             data: {
                 sessionId,
@@ -172,6 +259,7 @@ async function streamAIResponse(
                 model,
                 mode,
                 content: fullText,
+                parts: validateParts,
                 status: MessageStatus.COMPLETE,
                 duration: Math.round(elapsedMs / 1000),
             },
