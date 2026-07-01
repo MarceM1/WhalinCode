@@ -1,4 +1,4 @@
-import {z} from 'zod';
+import { z } from 'zod';
 
 /**
  * Keep the explicit key schema here because the one-argument z.record(...) form
@@ -64,9 +64,7 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
     z.object({
         type: z.literal('error'),
         message: z.string(),
-    })
-])
+    }),
+]);
 
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
-
-

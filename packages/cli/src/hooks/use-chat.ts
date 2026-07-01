@@ -1,15 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { EventSourceParserStream} from 'eventsource-parser/stream';
+import { EventSourceParserStream } from 'eventsource-parser/stream';
 import prettyMs from 'pretty-ms';
 import type { ClientResponse } from 'hono/client';
 import { apiClient } from '../lib/api-client';
 import { getErrorMessage } from '../lib/http-errors';
 import type { Mode } from '@whalincode/database/enums';
-import {
-    chatStreamEventSchema,
-    type SupportedChatModelId
-} from '@whalincode/shared';
-
+import { chatStreamEventSchema, type SupportedChatModelId } from '@whalincode/shared';
 
 export type ClientToolCallPart = {
     type: 'tool-call';
@@ -20,46 +16,43 @@ export type ClientToolCallPart = {
     status: 'calling' | 'done';
 }; // TODO: Ver como inferir luego ya sea de hono, prisma, shared package.
 
-
-export type ClientMessagePart = 
-    | { type: 'reasoning'; text: string; }
-    | ClientToolCallPart
-    | { type: 'text'; text: string; }
+export type ClientMessagePart =
+    { type: 'reasoning'; text: string } | ClientToolCallPart | { type: 'text'; text: string };
 
 export type Message =
     | {
-        id: string;
-        role: 'user';
-        content: string;
-        mode: Mode;
-        model: SupportedChatModelId;
-    }
+          id: string;
+          role: 'user';
+          content: string;
+          mode: Mode;
+          model: SupportedChatModelId;
+      }
     | {
-        id: string;
-        role: 'assistant';
-        content: string;
-        mode: Mode;
-        model: SupportedChatModelId;
-        parts: ClientMessagePart[];
-        duration?: string;
-        interrupted?: boolean;
-    }
+          id: string;
+          role: 'assistant';
+          content: string;
+          mode: Mode;
+          model: SupportedChatModelId;
+          parts: ClientMessagePart[];
+          duration?: string;
+          interrupted?: boolean;
+      }
     | {
-        id: string;
-        role: 'error';
-        content: string;
-};
+          id: string;
+          role: 'error';
+          content: string;
+      };
 
-type StreamingState=
+type StreamingState =
     | {
-        status: 'idle';           
-    }
+          status: 'idle';
+      }
     | {
-        status: 'streaming';
-        parts: ClientMessagePart[];
-        mode: Mode;
-        model: SupportedChatModelId;
-};
+          status: 'streaming';
+          parts: ClientMessagePart[];
+          mode: Mode;
+          model: SupportedChatModelId;
+      };
 
 type ActiveStream = {
     requestId: string;
@@ -82,117 +75,86 @@ type RunStreamParams = {
     request: (controller: AbortController) => Promise<ClientResponse<unknown>>;
 };
 
-export function useChat(
-    sessionId: string,
-    initialMessages: Message[],
-){
+export function useChat(sessionId: string, initialMessages: Message[]) {
     const [messages, setMessages] = useState<Message[]>(initialMessages);
-    const [streaming, setStreaming] = useState<StreamingState>({status: 'idle'});
+    const [streaming, setStreaming] = useState<StreamingState>({ status: 'idle' });
     const activeStreamRef = useRef<ActiveStream | null>(null);
 
     const updateMessages = useCallback((updater: (prev: Message[]) => Message[]) => {
         setMessages((prev) => updater(prev));
-    },[]);
+    }, []);
 
     const isActiveRequest = useCallback((requestId: string) => {
         return activeStreamRef.current?.requestId === requestId;
-    },[]);
+    }, []);
 
-    const emitParts = useCallback((
-        requestId: string,
-        parts: ClientMessagePart[],
-    )=>{
-        if (!isActiveRequest(requestId)) return;
+    const emitParts = useCallback(
+        (requestId: string, parts: ClientMessagePart[]) => {
+            if (!isActiveRequest(requestId)) return;
 
-        const snapshot = [...parts];
-        const activeStream = activeStreamRef.current;
-        if (!activeStream) return;
+            const snapshot = [...parts];
+            const activeStream = activeStreamRef.current;
+            if (!activeStream) return;
 
-        activeStream.parts = snapshot;
+            activeStream.parts = snapshot;
 
-        setStreaming({
-            status:'streaming',
-            parts: snapshot,
-            mode: activeStream.mode,
-            model: activeStream.model
-        });
-
-    },[isActiveRequest]);
-
-    const captureInterruptedMessage = useCallback((
-        activeStream: ActiveStream
-    ) => {
-
-        if ( activeStream.interruptedCaptured || activeStream.parts.length === 0) {
-            return;
-        };
-
-        activeStream.interruptedCaptured = true;
-        const parts = [...activeStream.parts];
-        const fullText = parts
-            .filter((p) => p.type === 'text')
-            .map((p) => p.text)
-            .join('');
-
-        updateMessages((prev) => [
-            ...prev,
-            {
-                id: crypto.randomUUID(),
-                role:'assistant',
+            setStreaming({
+                status: 'streaming',
+                parts: snapshot,
                 mode: activeStream.mode,
                 model: activeStream.model,
-                content: fullText,
-                parts,
-                interrupted: true
-            },
-        ]);
+            });
+        },
+        [isActiveRequest],
+    );
 
-    },[updateMessages]);
+    const captureInterruptedMessage = useCallback(
+        (activeStream: ActiveStream) => {
+            if (activeStream.interruptedCaptured || activeStream.parts.length === 0) {
+                return;
+            }
 
-    const clearStream = useCallback((requestId: string)=> {
-        if (!isActiveRequest(requestId)) return;
+            activeStream.interruptedCaptured = true;
+            const parts = [...activeStream.parts];
+            const fullText = parts
+                .filter((p) => p.type === 'text')
+                .map((p) => p.text)
+                .join('');
 
-        activeStreamRef.current = null;
-        setStreaming({status: 'idle'});
-    },[isActiveRequest]);
-
-    const handleStream = useCallback(async (
-        response: ClientResponse<unknown>,
-        activeStream: ActiveStream
-    )=>{
-        if (!isActiveRequest(activeStream.requestId)) return;
-
-        if(!response.ok) {
-            const message =  await getErrorMessage(response);
-            
-            updateMessages((prev)=>[
+            updateMessages((prev) => [
                 ...prev,
                 {
                     id: crypto.randomUUID(),
-                    role: 'error',
-                    content: message,
+                    role: 'assistant',
+                    mode: activeStream.mode,
+                    model: activeStream.model,
+                    content: fullText,
+                    parts,
+                    interrupted: true,
                 },
             ]);
-            return;
-        };
+        },
+        [updateMessages],
+    );
 
-        const parts: ClientMessagePart[] = [];
+    const clearStream = useCallback(
+        (requestId: string) => {
+            if (!isActiveRequest(requestId)) return;
 
-        const stream = response
-            .body!.pipeThrough(new TextDecoderStream())
-            .pipeThrough(new EventSourceParserStream())
-        ;
+            activeStreamRef.current = null;
+            setStreaming({ status: 'idle' });
+        },
+        [isActiveRequest],
+    );
 
-        for await (const {data} of stream) {
-            if(!isActiveRequest(activeStream.requestId)) return;
+    const handleStream = useCallback(
+        async (response: ClientResponse<unknown>, activeStream: ActiveStream) => {
+            if (!isActiveRequest(activeStream.requestId)) return;
 
-            let event;
+            if (!response.ok) {
+                const message = await getErrorMessage(response);
 
-            try {
-                event= chatStreamEventSchema.parse(JSON.parse(data));
-            } catch (error) {
-               const message = error instanceof Error ? error.message : 'Invalid stream event';
-               updateMessages((prev)=>[
+                updateMessages((prev) => [
                     ...prev,
                     {
                         id: crypto.randomUUID(),
@@ -200,180 +162,209 @@ export function useChat(
                         content: message,
                     },
                 ]);
-                
-                break;
-            };
+                return;
+            }
 
-            switch (event.type) {
-                case 'reasoning-delta': {
-                    const last = parts[parts.length - 1];
-                    if (last && last.type === 'reasoning') {
-                        last.text += event.text;                        
-                    }else {
-                        parts.push({type: 'reasoning', text: event.text});
-                    };
+            const parts: ClientMessagePart[] = [];
 
-                    emitParts(activeStream.requestId, parts);
-                    break;  
-                };
+            const stream = response
+                .body!.pipeThrough(new TextDecoderStream())
+                .pipeThrough(new EventSourceParserStream());
 
-                case 'tool-call': {
-                    parts.push({
-                        type: 'tool-call',
-                        id: event.toolCallId,
-                        name: event.toolName,
-                        args: event.args,
-                        status: 'calling',
-                    });
+            for await (const { data } of stream) {
+                if (!isActiveRequest(activeStream.requestId)) return;
 
-                    emitParts(activeStream.requestId, parts);
-                    break;
-                };
+                let event;
 
-                case 'tool-call-result': {
-                    const toolCall = parts.find((p): p is ClientToolCallPart => p.type === 'tool-call' && p.id === event.toolCallId);
-                    
-                    if (toolCall) {
-                        toolCall.result = event.result;
-                        toolCall.status = 'done';
-                    };
-
-                    emitParts(activeStream.requestId, parts);
-                    break;
-                };
-
-                case 'text-delta': {
-                    const last = parts[parts.length - 1];
-                    if (last && last.type === 'text') {
-                        last.text += event.text;                        
-                    }else {
-                        parts.push({type: 'text', text: event.text});
-                    }
-                    emitParts(activeStream.requestId, parts);
-
-                    break;
-                };
-
-                case 'done': {
-                    if (!isActiveRequest(activeStream.requestId)) return;
-
-                    const fullText = parts
-                        .filter((part) => part.type === 'text')
-                        .map((part) => part.text)
-                        .join('')
-                    ;
-
-                    updateMessages((prev) =>[
-                        ...prev,
-                        {
-                            id: event.messageId,
-                            role: 'assistant',
-                            content: fullText,
-                            mode: activeStream.mode,
-                            model: activeStream.model,
-                            duration: prettyMs(event.durationMs),
-                            parts: [...parts],
-                        }
-                    ]);
-
-                    break;
-                };
-                
-                case 'error': {
-                    updateMessages((prev) =>[
+                try {
+                    event = chatStreamEventSchema.parse(JSON.parse(data));
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : 'Invalid stream event';
+                    updateMessages((prev) => [
                         ...prev,
                         {
                             id: crypto.randomUUID(),
                             role: 'error',
-                            content: event.message,
+                            content: message,
                         },
                     ]);
 
                     break;
-                };
+                }
+
+                switch (event.type) {
+                    case 'reasoning-delta': {
+                        const last = parts[parts.length - 1];
+                        if (last && last.type === 'reasoning') {
+                            last.text += event.text;
+                        } else {
+                            parts.push({ type: 'reasoning', text: event.text });
+                        }
+
+                        emitParts(activeStream.requestId, parts);
+                        break;
+                    }
+
+                    case 'tool-call': {
+                        parts.push({
+                            type: 'tool-call',
+                            id: event.toolCallId,
+                            name: event.toolName,
+                            args: event.args,
+                            status: 'calling',
+                        });
+
+                        emitParts(activeStream.requestId, parts);
+                        break;
+                    }
+
+                    case 'tool-call-result': {
+                        const toolCall = parts.find(
+                            (p): p is ClientToolCallPart =>
+                                p.type === 'tool-call' && p.id === event.toolCallId,
+                        );
+
+                        if (toolCall) {
+                            toolCall.result = event.result;
+                            toolCall.status = 'done';
+                        }
+
+                        emitParts(activeStream.requestId, parts);
+                        break;
+                    }
+
+                    case 'text-delta': {
+                        const last = parts[parts.length - 1];
+                        if (last && last.type === 'text') {
+                            last.text += event.text;
+                        } else {
+                            parts.push({ type: 'text', text: event.text });
+                        }
+                        emitParts(activeStream.requestId, parts);
+
+                        break;
+                    }
+
+                    case 'done': {
+                        if (!isActiveRequest(activeStream.requestId)) return;
+
+                        const fullText = parts
+                            .filter((part) => part.type === 'text')
+                            .map((part) => part.text)
+                            .join('');
+
+                        updateMessages((prev) => [
+                            ...prev,
+                            {
+                                id: event.messageId,
+                                role: 'assistant',
+                                content: fullText,
+                                mode: activeStream.mode,
+                                model: activeStream.model,
+                                duration: prettyMs(event.durationMs),
+                                parts: [...parts],
+                            },
+                        ]);
+
+                        break;
+                    }
+
+                    case 'error': {
+                        updateMessages((prev) => [
+                            ...prev,
+                            {
+                                id: crypto.randomUUID(),
+                                role: 'error',
+                                content: event.message,
+                            },
+                        ]);
+
+                        break;
+                    }
+                }
+            }
+        },
+        [updateMessages, isActiveRequest, emitParts],
+    );
+
+    const runStream = useCallback(
+        async ({ mode, model, request }: RunStreamParams) => {
+            const controller = new AbortController();
+            const activeStream: ActiveStream = {
+                requestId: crypto.randomUUID(),
+                controller,
+                mode,
+                model,
+                parts: [],
+                interruptedCaptured: false,
             };
-        };
-        
-    },[updateMessages, isActiveRequest, emitParts]);
 
-    const runStream = useCallback(async (
-        { mode, model, request }: RunStreamParams
-    )=>{
-        const controller = new AbortController();
-        const activeStream: ActiveStream = {
-            requestId: crypto.randomUUID(),
-            controller,
-            mode,
-            model,
-            parts: [],
-            interruptedCaptured: false,
-        };
+            activeStreamRef.current = activeStream;
 
-        activeStreamRef.current = activeStream;
+            setStreaming({
+                status: 'streaming',
+                parts: [],
+                mode,
+                model,
+            });
 
-        setStreaming({
-            status: 'streaming',
-            parts: [],
-            mode,
-            model
-        });
+            try {
+                const response = await request(controller);
+                await handleStream(response, activeStream);
+            } catch (error) {
+                if (error instanceof DOMException && error.name === 'AbortError') {
+                    return;
+                }
 
-        try {
-            const response = await request(controller);
-            await handleStream(response, activeStream);
-        } catch (error) {
-            if(error instanceof DOMException && error.name === 'AbortError') {
-                return;
+                if (!isActiveRequest(activeStream.requestId)) return;
+
+                const msg = error instanceof Error ? error.message : String(error);
+                updateMessages((prev) => [
+                    ...prev,
+                    {
+                        id: crypto.randomUUID(),
+                        role: 'error',
+                        content: msg,
+                    },
+                ]);
+            } finally {
+                clearStream(activeStream.requestId);
+            }
+        },
+        [clearStream, handleStream, isActiveRequest, updateMessages],
+    );
+
+    const stopActiveStream = useCallback(
+        (capturePartial: boolean) => {
+            const activeStream = activeStreamRef.current;
+            if (!activeStream) return;
+
+            if (capturePartial) {
+                captureInterruptedMessage(activeStream);
             }
 
-            if(!isActiveRequest(activeStream.requestId)) return;
+            activeStreamRef.current = null;
+            setStreaming({ status: 'idle' });
+            activeStream.controller.abort();
+        },
+        [captureInterruptedMessage],
+    );
 
-            const msg  = error instanceof Error ? error.message : String(error);
-            updateMessages((prev) =>[
-                ...prev,
-                {
-                    id: crypto.randomUUID(),
-                    role: 'error',
-                    content: msg,
+    const resume = useCallback(
+        async ({ mode, model }: Omit<SubmitParams, 'userText'>) => {
+            await runStream({
+                mode,
+                model,
+                request: async (controller) => {
+                    return apiClient.chat[':sessionId'].resume.$post(
+                        { param: { sessionId } },
+                        { init: { signal: controller.signal } },
+                    );
                 },
-            ]);
-        } finally {
-            clearStream(activeStream.requestId);
-        };
-
-    },[clearStream, handleStream, isActiveRequest, updateMessages]);
-
-    const stopActiveStream = useCallback((
-        capturePartial: boolean
-    ) => {
-
-        const activeStream = activeStreamRef.current
-        if(!activeStream) return;
-
-        if (capturePartial) {
-            captureInterruptedMessage(activeStream);
-        }
-
-        activeStreamRef.current = null;
-        setStreaming({status: 'idle'});
-        activeStream.controller.abort();
-
-    }, [captureInterruptedMessage]);
-
-    const resume = useCallback(async (
-        {mode, model}: Omit<SubmitParams, 'userText'>
-    ) => {
-        await runStream({
-            mode,
-            model,
-            request: async (controller) =>{
-                return apiClient.chat[':sessionId'].resume.$post(
-                    {param: {sessionId}},
-                    {init:{signal: controller.signal}},
-                );
-            },
-        });
-    },[runStream, sessionId]);
+            });
+        },
+        [runStream, sessionId],
+    );
 
     // Auto resumen cuanto la conversacion termina con un mensaje de usuario y no tiene replay
     const hasAutoResumeRef = useRef(false);
@@ -381,7 +372,7 @@ export function useChat(
         if (hasAutoResumeRef.current) return;
 
         const last = initialMessages[initialMessages.length - 1];
-        if(!last || last.role !== 'user') return;
+        if (!last || last.role !== 'user') return;
 
         hasAutoResumeRef.current = true;
 
@@ -389,53 +380,49 @@ export function useChat(
             mode: last.mode,
             model: last.model,
         });
-    },[initialMessages, resume])
+    }, [initialMessages, resume]);
 
-    const submit = useCallback(async (
-        {userText, model, mode}: SubmitParams
-    ) => {
-        // Muestra la respuesta parcial antes de enviar el proximo msg
-        stopActiveStream(true);
+    const submit = useCallback(
+        async ({ userText, model, mode }: SubmitParams) => {
+            // Muestra la respuesta parcial antes de enviar el proximo msg
+            stopActiveStream(true);
 
+            const userMessage: Message = {
+                id: crypto.randomUUID(),
+                role: 'user',
+                content: userText,
+                mode,
+                model,
+            };
 
-        const userMessage: Message = {
-            id: crypto.randomUUID(),
-            role: 'user',
-            content: userText,
-            mode,
-            model
-        };
+            updateMessages((prev) => [...prev, userMessage]);
 
-        updateMessages((prev) => [...prev, userMessage]);
-
-        await runStream({
-            mode,
-            model,
-            request: async (controller) => {
-                return apiClient.chat[':sessionId'].$post(
-                    {
-                        param: {sessionId}, 
-                        json: {content: userText, mode, model}
-                    },
-                    {
-                        init: { signal: controller.signal}    
-                    },
-                );
-            },
-        });
-    }, [runStream, sessionId, updateMessages, stopActiveStream]);
+            await runStream({
+                mode,
+                model,
+                request: async (controller) => {
+                    return apiClient.chat[':sessionId'].$post(
+                        {
+                            param: { sessionId },
+                            json: { content: userText, mode, model },
+                        },
+                        {
+                            init: { signal: controller.signal },
+                        },
+                    );
+                },
+            });
+        },
+        [runStream, sessionId, updateMessages, stopActiveStream],
+    );
 
     const abort = useCallback(() => {
         stopActiveStream(false);
-    }, [stopActiveStream])
+    }, [stopActiveStream]);
 
-    const interrupt= useCallback(()=>{
+    const interrupt = useCallback(() => {
         stopActiveStream(true);
-    },[stopActiveStream]);
+    }, [stopActiveStream]);
 
-    return {messages, streaming, submit, abort, interrupt};
-};
-
-
-
-    
+    return { messages, streaming, submit, abort, interrupt };
+}
