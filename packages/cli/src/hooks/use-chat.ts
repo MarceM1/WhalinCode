@@ -10,11 +10,21 @@ import {
     type SupportedChatModelId
 } from '@whalincode/shared';
 
-export type ClientMessagePart = {
-    type: 'text';
-    text: string;
-};
 
+export type ClientToolCallPart = {
+    type: 'tool-call';
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+    result?: string;
+    status: 'calling' | 'done';
+}; // TODO: Ver como inferir luego ya sea de hono, prisma, shared package.
+
+
+export type ClientMessagePart = 
+    | { type: 'reasoning'; text: string; }
+    | ClientToolCallPart
+    | { type: 'text'; text: string; }
 
 export type Message =
     | {
@@ -190,10 +200,48 @@ export function useChat(
                         content: message,
                     },
                 ]);
+                
                 break;
             };
 
             switch (event.type) {
+                case 'reasoning-delta': {
+                    const last = parts[parts.length - 1];
+                    if (last && last.type === 'reasoning') {
+                        last.text += event.text;                        
+                    }else {
+                        parts.push({type: 'reasoning', text: event.text});
+                    };
+
+                    emitParts(activeStream.requestId, parts);
+                    break;  
+                };
+
+                case 'tool-call': {
+                    parts.push({
+                        type: 'tool-call',
+                        id: event.toolCallId,
+                        name: event.toolName,
+                        args: event.args,
+                        status: 'calling',
+                    });
+
+                    emitParts(activeStream.requestId, parts);
+                    break;
+                };
+
+                case 'tool-call-result': {
+                    const toolCall = parts.find((p): p is ClientToolCallPart => p.type === 'tool-call' && p.id === event.toolCallId);
+                    
+                    if (toolCall) {
+                        toolCall.result = event.result;
+                        toolCall.status = 'done';
+                    };
+
+                    emitParts(activeStream.requestId, parts);
+                    break;
+                };
+
                 case 'text-delta': {
                     const last = parts[parts.length - 1];
                     if (last && last.type === 'text') {
@@ -203,7 +251,7 @@ export function useChat(
                     }
                     emitParts(activeStream.requestId, parts);
 
-                    break
+                    break;
                 };
 
                 case 'done': {
@@ -245,6 +293,7 @@ export function useChat(
                 };
             };
         };
+        
     },[updateMessages, isActiveRequest, emitParts]);
 
     const runStream = useCallback(async (
