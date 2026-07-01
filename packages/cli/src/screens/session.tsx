@@ -1,37 +1,36 @@
-import { useState, useEffect, useMemo } from "react";
-import { useParams, useLocation, useNavigate } from "react-router";
-import { z } from "zod";
-import { useKeyboard } from "@opentui/react";
-import prettyMs from "pretty-ms";
-import { DEFAULT_CHAT_MODEL_ID, type SupportedChatModelId } from "@whalincode/shared";
-import type { InferResponseType } from "hono/client";
+import { useState, useEffect, useMemo } from 'react';
+import { useParams, useLocation, useNavigate } from 'react-router';
+import { z } from 'zod';
+import { useKeyboard } from '@opentui/react';
+import prettyMs from 'pretty-ms';
+import { messagePartsSchema, type SupportedChatModelId } from '@whalincode/shared';
+import type { InferResponseType } from 'hono/client';
 
-import { SessionShell } from "../components/session-shell";
-import {
-    UserMessage,
-    BotMessage,
-    ErrorMessage,
-} from "../components/messages";
-import { useToast } from "../providers/toast";
-import { useChat } from "../hooks/use-chat";
-import type { Message, ClientMessagePart } from '../hooks/use-chat'
-import { apiClient } from "../lib/api-client";
-import { getErrorMessage } from "../lib/http-errors";
-import { MessageStatus } from "@whalincode/database/enums";
-import { useKeyboardLayer } from "../providers/keyboard-layer";
+import { SessionShell } from '../components/session-shell';
+import { UserMessage, BotMessage, ErrorMessage } from '../components/messages';
+import { useToast } from '../providers/toast';
+import { useChat } from '../hooks/use-chat';
+import { usePromptConfig } from '../providers/prompt-config';
+import type { Message, ClientMessagePart } from '../hooks/use-chat';
+import { apiClient } from '../lib/api-client';
+import { getErrorMessage } from '../lib/http-errors';
+import { MessageStatus } from '@whalincode/database/enums';
+import { useKeyboardLayer } from '../providers/keyboard-layer';
 
 // Inferimos el tipo directamente desde el endpoint Hono.
 //
 // Esto evita mantener tipos duplicados entre cliente y servidor.
 // Si cambia la respuesta del endpoint, el tipo se actualiza automáticamente.
-type SessionData = InferResponseType<(typeof apiClient.sessions)[":id"]["$get"], 200>;
+type SessionData = InferResponseType<(typeof apiClient.sessions)[':id']['$get'], 200>;
 
 const sessionLocationSchema = z.object({
     // Valida el estado recibido durante la navegación.
     //
     // Permite recuperar una sesión prefetchada con tipado seguro
     // sin depender de casts manuales.
-    session: z.custom<SessionData>((data) => data != null && typeof data === "object" && "id" in data)
+    session: z.custom<SessionData>(
+        (data) => data != null && typeof data === 'object' && 'id' in data,
+    ),
 });
 
 function mapDbMessages(dbMessages: SessionData['messages']): Message[] {
@@ -40,9 +39,9 @@ function mapDbMessages(dbMessages: SessionData['messages']): Message[] {
             return {
                 id: msg.id,
                 role: 'error',
-                content: msg.content
+                content: msg.content,
             };
-        };
+        }
 
         if (msg.role === 'USER') {
             return {
@@ -50,9 +49,16 @@ function mapDbMessages(dbMessages: SessionData['messages']): Message[] {
                 role: 'user',
                 content: msg.content,
                 mode: msg.mode,
-                model: msg.model as SupportedChatModelId
+                model: msg.model as SupportedChatModelId,
             };
-        };
+        }
+
+        const parsedParts = msg.parts == null ? null : messagePartsSchema.safeParse(msg.parts);
+        const parts: ClientMessagePart[] = parsedParts?.success
+            ? parsedParts.data.map((p) =>
+                  p.type === 'tool-call' ? { ...p, status: 'done' as const } : p,
+              )
+            : [];
 
         return {
             id: msg.id,
@@ -60,22 +66,20 @@ function mapDbMessages(dbMessages: SessionData['messages']): Message[] {
             content: msg.content,
             mode: msg.mode,
             model: msg.model as SupportedChatModelId,
-            parts: [{ type: 'text', text: msg.content }],
+            parts,
             ...(msg.duration != null ? { duration: prettyMs(msg.duration * 1000) } : {}),
             interrupted: msg.status === MessageStatus.INTERRUPTED,
         };
-    })
+    });
 }
 
-function ChatMessage(
-    { msg }: { msg: Message }
-) {
+function ChatMessage({ msg }: { msg: Message }) {
     if (msg.role === 'user') {
-        return <UserMessage message={msg.content} />
-    };
+        return <UserMessage message={msg.content} mode={msg.mode} />;
+    }
     if (msg.role === 'error') {
-        return <ErrorMessage message={msg.content} />
-    };
+        return <ErrorMessage message={msg.content} />;
+    }
 
     return (
         <BotMessage
@@ -86,13 +90,14 @@ function ChatMessage(
             streaming={false}
             interrupted={msg.interrupted}
         />
-    )
+    );
 }
 
 function SessionChat({ session }: { session: SessionData }) {
     const [initialMessages] = useState(() => mapDbMessages(session.messages));
     const { isTopLayer } = useKeyboardLayer();
-    const { messages, streaming, submit, abort, interrupt } = useChat(session.id, initialMessages)
+    const { messages, streaming, submit, abort, interrupt } = useChat(session.id, initialMessages);
+    const { mode, model } = usePromptConfig();
 
     // Detiene los replys pendientes cuando el usuario deja la sesión
     useEffect(() => {
@@ -105,15 +110,15 @@ function SessionChat({ session }: { session: SessionData }) {
             key.preventDefault();
             interrupt();
         }
-    })
+    });
 
     return (
         <SessionShell
             onSubmit={(text) =>
                 submit({
                     userText: text,
-                    mode: 'BUILD',
-                    model: DEFAULT_CHAT_MODEL_ID
+                    mode,
+                    model,
                 })
             }
             loading={streaming.status === 'streaming'}
@@ -131,9 +136,8 @@ function SessionChat({ session }: { session: SessionData }) {
                 />
             )}
         </SessionShell>
-    )
-
-};
+    );
+}
 
 export function Session() {
     const { id } = useParams<{ id: string }>();
@@ -164,24 +168,23 @@ export function Session() {
         let ignore = false;
         const fetchSession = async () => {
             try {
-                const res = await apiClient.sessions[":id"].$get({
-                    param: { id }
+                const res = await apiClient.sessions[':id'].$get({
+                    param: { id },
                 });
 
                 if (ignore) return;
                 if (!res.ok) throw new Error(await getErrorMessage(res));
 
-                const resolved = await res.json()
+                const resolved = await res.json();
                 setSession(resolved);
-
             } catch (error) {
                 if (ignore) return;
                 toast.show({
-                    variant: "error",
-                    message: error instanceof Error ? error.message : "Failed to load session",
+                    variant: 'error',
+                    message: error instanceof Error ? error.message : 'Failed to load session',
                 });
                 navigate('/', { replace: true });
-            };
+            }
         };
 
         fetchSession();
@@ -192,10 +195,8 @@ export function Session() {
     }, [id, prefetched, toast, navigate]);
 
     if (!session) {
-        return (
-            <SessionShell onSubmit={() => { }} inputDisabled loading />
-        );
-    };
+        return <SessionShell onSubmit={() => {}} inputDisabled loading />;
+    }
 
-    return <SessionChat key={session.id} session={session} />
-}; 
+    return <SessionChat key={session.id} session={session} />;
+}

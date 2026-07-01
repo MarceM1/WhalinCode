@@ -1,1 +1,1 @@
-export { MessageStatus, Mode, Role } from "../generated/prisma/enums"
+export { MessageStatus, Mode, Role } from '../generated/prisma/enums';

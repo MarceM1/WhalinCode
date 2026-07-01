@@ -171,22 +171,22 @@ export const THEMES: Theme[] = [
     },
 
     {
-    name: 'Ember Ash',
-    colors: {
-        primary: '#FF9E64',
-        planMode: '#C792EA',
-        selection: '#82AAFF',
-        thinking: '#D4A5FF',
-        success: '#A6E3A1',
-        error: '#FF5370',
-        info: '#89DDFF',
-        background: '#120C0A',
-        surface: '#1D1411',
-        dialogSurface: '#140D0B',
-        thinkingBorder: '#3A2922',
-        dimSeparator: '#5A4337',
+        name: 'Ember Ash',
+        colors: {
+            primary: '#FF9E64',
+            planMode: '#C792EA',
+            selection: '#82AAFF',
+            thinking: '#D4A5FF',
+            success: '#A6E3A1',
+            error: '#FF5370',
+            info: '#89DDFF',
+            background: '#120C0A',
+            surface: '#1D1411',
+            dialogSurface: '#140D0B',
+            thinkingBorder: '#3A2922',
+            dimSeparator: '#5A4337',
+        },
     },
-},
 
     {
         name: 'Aurora Veil',
@@ -580,7 +580,7 @@ export const THEMES: Theme[] = [
 
 export const DEFAULT_THEME = THEMES[0]!;
 
-/** 
+/**
  *  De esta manera sera cuando sea el default theme configurable, por ahora lo dejo fijo
  *  export const DEFAULT_THEME = THEMES.find((t) => t.name ==='Nightfox')!;
-*/
+ */

@@ -1,28 +1,28 @@
-import {Hono} from 'hono';
+import { Hono } from 'hono';
 // import { HTTPException } from 'hono/http-exception';
 import { zValidator } from '@hono/zod-validator';
-import * as Sentry from "@sentry/hono/bun";
+import * as Sentry from '@sentry/hono/bun';
 import { z } from 'zod';
-import { db } from "@whalincode/database/client";
-import {  Role, Mode, MessageStatus } from "@whalincode/database/enums";
-import { findSupportedChatModel } from '@whalincode/shared'
-
-
+import { db } from '@whalincode/database/client';
+import { Role, Mode, MessageStatus } from '@whalincode/database/enums';
+import { findSupportedChatModel } from '@whalincode/shared';
 
 const createSessionSchema = z.object({
     title: z.string(),
     cwd: z.string().optional(),
-    initialMessage: z.object({
-        role: z.enum(Role),
-        content: z.string(),
-        mode: z.enum(Mode),
-        model: z.string()
-            .refine((id)=> !!findSupportedChatModel(id),'Unsupported chat model'),
-    })
-    .optional(),
+    initialMessage: z
+        .object({
+            role: z.enum(Role),
+            content: z.string(),
+            mode: z.enum(Mode),
+            model: z
+                .string()
+                .refine((id) => !!findSupportedChatModel(id), 'Unsupported chat model'),
+        })
+        .optional(),
 });
 
-const createSessionValidator = zValidator ('json', createSessionSchema, (result, c)=> {
+const createSessionValidator = zValidator('json', createSessionSchema, (result, c) => {
     // if(!result.success){
     //     Sentry.logger.warn('Session creation validation failed', {
     //         path: c.req.path,
@@ -30,34 +30,28 @@ const createSessionValidator = zValidator ('json', createSessionSchema, (result,
     //     });
 
     //     return c.json({error: 'Invalid request body'}, 400);
-    // }   
-//     if (!result.success) {
-//     const error = result.error;
+    // }
+    //     if (!result.success) {
+    //     const error = result.error;
 
-//     Sentry.logger.warn('Session creation validation failed', {
-//         path: c.req.path,
-//         issues: error.issues.length,
-//     });
+    //     Sentry.logger.warn('Session creation validation failed', {
+    //         path: c.req.path,
+    //         issues: error.issues.length,
+    //     });
 
-//     return c.json({ error: 'Invalid request body' }, 400);
-// }
+    //     return c.json({ error: 'Invalid request body' }, 400);
+    // }
     if (result.success === false) {
         const issues = result.error.issues.length;
 
-        Sentry.logger.warn(
-            'Session creation validation failed',
-            {
-                path: c.req.path,
-                issues,
-            }
-        );
+        Sentry.logger.warn('Session creation validation failed', {
+            path: c.req.path,
+            issues,
+        });
 
-        return c.json(
-            { error: 'Invalid request body' },
-            400
-        );
+        return c.json({ error: 'Invalid request body' }, 400);
     }
-})
+});
 
 const app = new Hono()
     .get('/', async (c) => {
@@ -70,9 +64,9 @@ const app = new Hono()
             },
         });
 
-        Sentry.logger.info("Listed sessions", {
+        Sentry.logger.info('Listed sessions', {
             count: sessions.length,
-        })
+        });
 
         return c.json(sessions);
     })
@@ -91,16 +85,16 @@ const app = new Hono()
                 messages: {
                     orderBy: { createdAt: 'asc' },
                 },
-            }
+            },
         });
 
-        if(!session){
+        if (!session) {
             Sentry.logger.warn('Session not found', {
                 sessionId: id,
                 userId: 'mock-user',
             });
 
-            return c.json({error: 'Session not found'}, 404);
+            return c.json({ error: 'Session not found' }, 404);
         }
 
         Sentry.logger.info('Loaded session', {
@@ -118,12 +112,12 @@ const app = new Hono()
         // Mock: Uncomment to simulate an error during session loading
         // throw new HTTPException(500, {message:'Mock error: session loading failed'});
 
-        const {initialMessage,  ...data} = c.req.valid('json');
+        const { initialMessage, ...data } = c.req.valid('json');
 
         const session = await db.session.create({
-            data:{
+            data: {
                 ...data,
-                userId: "mock-user",
+                userId: 'mock-user',
                 ...(initialMessage && {
                     messages: {
                         create: {
@@ -131,18 +125,17 @@ const app = new Hono()
                             status: MessageStatus.COMPLETE,
                         },
                     },
-                })
+                }),
             },
             include: { messages: true },
         });
 
-            Sentry.logger.info('Created session', {
-                sessionId: session.id,
-                title: session.title,
-            });
+        Sentry.logger.info('Created session', {
+            sessionId: session.id,
+            title: session.title,
+        });
 
         return c.json(session, 201);
-    })
+    });
 
-    export default app;
-    
+export default app;

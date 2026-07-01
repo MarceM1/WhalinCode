@@ -1,24 +1,25 @@
-import {EmptyBorder} from "../border";
-import { useTheme } from "../../providers/theme";
+import { Mode } from '@whalincode/database/enums';
+import { EmptyBorder } from '../border';
+import { useTheme } from '../../providers/theme';
 
 type Props = {
     message: string;
+    mode: Mode;
 };
 
-
-export function UserMessage({message}: Props) {
+export function UserMessage({ message, mode }: Props) {
     const { colors } = useTheme();
 
     return (
         <box width="100%" alignItems="center">
             <box
-                border={["left"]}
-                borderColor={colors.primary}
+                border={['left']}
+                borderColor={mode === Mode.PLAN ? colors.planMode : colors.primary}
                 width="100%"
                 customBorderChars={{
                     ...EmptyBorder,
-                    vertical: "┃",
-                    bottomLeft: "┗",
+                    vertical: '┃',
+                    bottomLeft: '┗',
                 }}
             >
                 <box

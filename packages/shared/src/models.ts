@@ -12,7 +12,7 @@ type SupportedChatModelDefinition = {
     pricing: ModelPricing;
 };
 
-export const SUPPORTED_CHAT_MODELS= [
+export const SUPPORTED_CHAT_MODELS = [
     // los pricing estan sacados de sus doc oficial.  En teoría, deberia de haber un margen de ganancia ya que al usar lo que se conoce como prompt-cache (ver que tanto ya manejan lso proveedores, o impementarlo yo mismo), el costo por token finalmente debiese de ser un poco mas  barato que a los usuarios.
     //mas adelante seguramente sea necesario incluir cachedInput, por q muchos proveedoes ya distinguen entre cacheado y normal
     {
@@ -40,6 +40,14 @@ export const SUPPORTED_CHAT_MODELS= [
         },
     },
     {
+        id: 'claude-opus-4-8',
+        provider: 'anthropic',
+        pricing: {
+            inputUsedPerMillionTokens: 5, //Ver el pricing correcto
+            outputUsedPerMillionTokens: 25, //Ver el pricing correcto
+        },
+    },
+    {
         id: 'gpt-5.4',
         provider: 'openai',
         pricing: {
@@ -63,7 +71,7 @@ export const SUPPORTED_CHAT_MODELS= [
             outputUsedPerMillionTokens: 1.25,
         },
     },
-] as const satisfies readonly SupportedChatModelDefinition[]; //satisfies me permite simultanemente hacer una validacion estructural, y una inferencia literal. Eso me conserva los ID´s literales ('gpt-5.4-nano') y no solo su tipado. 
+] as const satisfies readonly SupportedChatModelDefinition[]; //satisfies me permite simultanemente hacer una validacion estructural, y una inferencia literal. Eso me conserva los ID´s literales ('gpt-5.4-nano') y no solo su tipado.
 
 export type SupportedChatModel = (typeof SUPPORTED_CHAT_MODELS)[number];
 
@@ -72,6 +80,6 @@ export type SupportedChatModelId = SupportedChatModel['id'];
 
 export function findSupportedChatModel(modelId: string) {
     return SUPPORTED_CHAT_MODELS.find((model) => model.id === modelId);
-};
+}
 
-export const DEFAULT_CHAT_MODEL_ID: SupportedChatModelId = 'claude-opus-4-6'; 
+export const DEFAULT_CHAT_MODEL_ID: SupportedChatModelId = 'claude-opus-4-6';
