@@ -1,4 +1,5 @@
 import { resolve, relative, join } from 'path';
+import { readdir } from 'fs/promises';
 import { tool } from 'ai';
 import { z } from 'zod';
 
@@ -55,9 +56,54 @@ function isHiddenPath(filePath: string): boolean {
         .some((segment) => segment.startsWith('.') && segment !== '.' && segment !== '..');
 }
 
-function shouldSkip(filePath: string): boolean {
-    const segments = filePath.split(/[\\/]/);
-    return segments.some((s) => SKIP_DIRS.has(s));
+/**
+ * Recursively walk a directory, pruning skip/hidden directories during
+ * traversal so we never descend into node_modules (etc.). Returns file paths
+ * relative to `root`. An optional glob matcher filters files by pattern.
+ */
+async function walkFiles(
+    root: string,
+    matcher: Bun.Glob | null,
+    dir = root,
+    results: string[] = [],
+): Promise<string[]> {
+    let entries;
+
+    try {
+        entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+        return results;
+    }
+
+    for (const entry of entries) {
+        const name = entry.name;
+
+        if (entry.isDirectory()) {
+            // Prune excluded and hidden directories up front so we never
+            // traverse into them (e.g. node_modules, .git).
+            if (SKIP_DIRS.has(name) || name.startsWith('.')) {
+                continue;
+            }
+            await walkFiles(root, matcher, join(dir, name), results);
+            continue;
+        }
+
+        if (!entry.isFile()) {
+            continue;
+        }
+
+        const relPath = relative(root, join(dir, name));
+
+        if (matcher && !matcher.match(relPath)) {
+            continue;
+        }
+
+        if (!isHiddenPath(relPath) && !isBinaryPath(relPath)) {
+            results.push(relPath);
+        }
+    }
+
+    return results;
 }
 
 export function createGrepTool(cwd: string) {
@@ -87,25 +133,16 @@ export function createGrepTool(cwd: string) {
             try {
                 const regex = new RegExp(pattern);
 
-                // Scan all files in the target directory
-                const scanGlob = new Bun.Glob(include ?? '**/*');
-                const filePaths: string[] = [];
-
-                for await (const entry of scanGlob.scan({
-                    cwd: resolved,
-                    dot: false,
-                    onlyFiles: true,
-                })) {
-                    if (!shouldSkip(entry) && !isHiddenPath(entry) && !isBinaryPath(entry)) {
-                        filePaths.push(entry);
-                    }
-                }
+                // Scan all files in the target directory, pruning
+                // node_modules and hidden directories during traversal.
+                const matcher = include ? new Bun.Glob(include) : null;
+                const filePaths = await walkFiles(resolved, matcher);
 
                 filePaths.sort();
 
                 const matches: { file: string; line: number; content: string }[] = [];
                 let truncated = false;
-                let totalMatches = 0;
+                let scanedMatches = 0;
 
                 for (const filePath of filePaths) {
                     if (truncated) break;
@@ -125,7 +162,7 @@ export function createGrepTool(cwd: string) {
 
                     for (let i = 0; i < lines.length; i++) {
                         if (regex.test(lines[i]!)) {
-                            totalMatches++;
+                            scanedMatches++;
 
                             if (matches.length < MAX_MATCHES) {
                                 matches.push({
@@ -135,6 +172,7 @@ export function createGrepTool(cwd: string) {
                                 });
                             } else {
                                 truncated = true;
+                                break;
                             }
                         }
                     }
@@ -146,7 +184,7 @@ export function createGrepTool(cwd: string) {
 
                 return {
                     matches,
-                    ...(truncated ? { truncated: true, totalMatches } : {}),
+                    ...(truncated ? { truncated: true, scanedMatches } : {}),
                 };
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
