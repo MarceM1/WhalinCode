@@ -1,4 +1,5 @@
 {
+    "$schema": "https://json.schemastore.org/package.json",
     "name": "whalincode",
     "private": true,
     "version": "1.0.0",
@@ -6,10 +7,16 @@
         "packages/*"
     ],
     "scripts": {
+        "start": "bun run --cwd packages/server start",
         "dev:cli": "bun run --watch packages/cli/src/index.tsx",
         "dev:server": "bun run --hot packages/server/src/index.ts",
         "format": "prettier . --write",
-        "format:check": "prettier . --check"
+        "format:check": "prettier . --check",
+        "typecheck": "bun run typecheck:cli && bun run typecheck:server && bun run typecheck:database && bun run typecheck:shared",
+        "typecheck:cli": "tsc --noEmit -p packages/cli/tsconfig.json",
+        "typecheck:server": "tsc --noEmit -p packages/server/tsconfig.json",
+        "typecheck:database": "tsc --noEmit -p packages/database/tsconfig.json",
+        "typecheck:shared": "tsc --noEmit -p packages/shared/tsconfig.json"
     },
     "devDependencies": {
         "@types/node": "^25.9.1",
