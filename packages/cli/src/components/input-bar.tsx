@@ -35,7 +35,15 @@ const MAX_VISIBLE_OPTIONS = 8;
 const CURRENT_DIRECTORY = process.cwd();
 const MAX_FALLBACK_MENTION_CANDIDATES = 32;
 const MENTION_QUERY_CHARACTER = /[A-Za-z0-9._/-]/;
-const RECURSIVE_MENTION_IGNORED_DIRECTORIES = new Set(['node_modules']);
+const RECURSIVE_MENTION_IGNORED_DIRECTORIES = new Set([
+    'node_modules',
+    '.git',
+    'dist',
+    'build',
+    'out',
+    'public',
+    'assets',
+]);
 /**
  * Directories skipped during recursive mention fallback.
  *
@@ -426,7 +434,6 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
             }
 
             activeMentionRef.current = nextMention;
-            setActiveMention(nextMention);
 
             push('mention', () => {
                 closeMentionMenu();
@@ -434,6 +441,8 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
             });
 
             if (mentionChanged) {
+                setActiveMention(nextMention);
+
                 setMentionSelectedIndex(0);
                 mentionScrollRef.current?.scrollTo(0);
             }
@@ -599,13 +608,13 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
                 handleCommand(command);
                 return;
             }
+        }
 
-            if (showMentionMenu) {
-                const candidate = mentionCandidates[mentionSelectedIndex];
-                if (candidate) {
-                    handleMentionExecute(mentionSelectedIndex);
-                    return;
-                }
+        if (showMentionMenu) {
+            const candidate = mentionCandidates[mentionSelectedIndex];
+            if (candidate) {
+                handleMentionExecute(mentionSelectedIndex);
+                return;
             }
         }
 
@@ -763,7 +772,7 @@ export function InputBar({ onSubmit, disabled = false }: Props) {
                         }
                         keyBindings={TEXTAREA_KEY_BINDINGS}
                         onContentChange={handleTextareaContentChange}
-                        placeholder={`Marce, en que puedo ayudarte hoy?...`}
+                        placeholder="Describe una tarea, usa @ para referenciar archivos o / para ejecutar comandos..."
                         onCursorChange={handleTextareaCursorChange}
                     />
                     <Statusbar />
