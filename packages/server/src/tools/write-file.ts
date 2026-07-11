@@ -14,6 +14,8 @@ export function createWriteFileTool(cwd: string) {
         execute: async ({ path, content }) => {
             const resolved = resolve(cwd, path);
 
+            // TODO: Consider using Bun.realpath() to resolve symlinks and avoid potential security issues.
+            // TODO: Use some type of context to ensure the resolved path is within the project directory. For now, we just check if it starts with cwd.
             if (!resolved.startsWith(cwd)) {
                 return {
                     error: `Path is outside of project directory: ${path}`,
