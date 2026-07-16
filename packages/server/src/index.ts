@@ -8,6 +8,8 @@ import { HTTPException } from 'hono/http-exception';
 
 import sessions from './routes/sessions.route';
 import chat from './routes/chat.route';
+import auth from './routes/auth.route';
+import { requireAuth } from './middleware/require-auth';
 
 const app = new Hono();
 
@@ -47,7 +49,10 @@ app.notFound((c) => {
     return c.text('Oops! Esta pagina no existe.', 404);
 });
 
-const routes = app.route('/sessions', sessions).route('/chat', chat);
+app.use('/sessions/*', requireAuth);
+app.use('/chat/*', requireAuth);
+
+const routes = app.route('/auth', auth).route('/sessions', sessions).route('/chat', chat);
 
 export type AppType = typeof routes;
 
