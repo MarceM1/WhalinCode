@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { db } from '@whalincode/database/client';
 import { Role, Mode, MessageStatus } from '@whalincode/database/enums';
 import { findSupportedChatModel } from '@whalincode/shared';
+import type { AuthenticateEnv } from '../middleware/require-auth';
 
 const createSessionSchema = z.object({
     title: z.string(),
@@ -53,9 +54,11 @@ const createSessionValidator = zValidator('json', createSessionSchema, (result, 
     }
 });
 
-const app = new Hono()
+const app = new Hono<AuthenticateEnv>()
     .get('/', async (c) => {
+        const userId = c.get('userId');
         const sessions = await db.session.findMany({
+            where: { userId },
             orderBy: { createdAt: 'desc' },
             select: {
                 id: true,
@@ -79,8 +82,9 @@ const app = new Hono()
         //     status: 500, message:'Mock error: session loading failed'})
 
         const id = c.req.param('id');
+        const userId = c.get('userId');
         const session = await db.session.findUnique({
-            where: { id },
+            where: { id, userId },
             include: {
                 messages: {
                     orderBy: { createdAt: 'asc' },
@@ -91,7 +95,7 @@ const app = new Hono()
         if (!session) {
             Sentry.logger.warn('Session not found', {
                 sessionId: id,
-                userId: 'mock-user',
+                userId,
             });
 
             return c.json({ error: 'Session not found' }, 404);
@@ -100,7 +104,7 @@ const app = new Hono()
         Sentry.logger.info('Loaded session', {
             sessionId: id,
             messageCount: session.messages.length,
-            userId: 'mock-user',
+            userId,
         });
 
         return c.json(session);
@@ -111,13 +115,14 @@ const app = new Hono()
 
         // Mock: Uncomment to simulate an error during session loading
         // throw new HTTPException(500, {message:'Mock error: session loading failed'});
+        const userId = c.get('userId');
 
         const { initialMessage, ...data } = c.req.valid('json');
 
         const session = await db.session.create({
             data: {
                 ...data,
-                userId: 'mock-user',
+                userId,
                 ...(initialMessage && {
                     messages: {
                         create: {
@@ -132,6 +137,7 @@ const app = new Hono()
 
         Sentry.logger.info('Created session', {
             sessionId: session.id,
+            userId,
             title: session.title,
         });
 
