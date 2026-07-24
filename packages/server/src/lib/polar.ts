@@ -26,6 +26,22 @@ export async function createCheckoutUrl({
 }: CreateCheckoutUrlParams) {
     const result = await polar.checkouts.create({
         products: [env.POLAR_PRODUCT_ID],
+        /**
+         * TODO(seguridad):
+         * Actualmente las URLs de retorno utilizadas por Polar se construyen a partir
+         * de la URL de la solicitud entrante.
+         *
+         * Esto asume que el origen de la petición es confiable (por ejemplo, detrás de
+         * Railway o un reverse proxy correctamente configurado).
+         *
+         * Antes de considerar la aplicación lista para producción, reemplazar este
+         * comportamiento por una URL canónica del servidor (APP_URL/API_URL) obtenida
+         * desde la configuración, evitando depender de un origen controlado por el
+         * cliente para construir las URLs de éxito y retorno.
+         *
+         * Tema relacionado:
+         * - Protección frente a Host Header Injection / Open Redirect.
+         */
         successUrl: new URL('/billing/success', requestUrl).toString(),
         externalCustomerId: customerExternalId,
         metadata: { source: 'whalincode-cli' },
