@@ -19,10 +19,13 @@ const app = new Hono().get('/callback', (c) => {
         const [encoded] = state.split('.');
         if (!encoded) throw new Error('Invalid state');
 
-        const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString());
+        const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString()) as {
+            port?: unknown;
+        };
         const port = payload.port;
 
-        if (!port || typeof port !== 'number') throw new Error('Invalid port in state');
+        if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535)
+            throw new Error('Invalid port in state');
 
         const redirectUrl = `http://localhost:${port}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
 

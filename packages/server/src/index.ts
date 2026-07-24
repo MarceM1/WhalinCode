@@ -9,6 +9,8 @@ import { HTTPException } from 'hono/http-exception';
 import sessions from './routes/sessions.route';
 import chat from './routes/chat.route';
 import auth from './routes/auth.route';
+import billing from './routes/billing.route';
+
 import { requireAuth } from './middleware/require-auth';
 
 const app = new Hono();
@@ -51,8 +53,14 @@ app.notFound((c) => {
 
 app.use('/sessions/*', requireAuth);
 app.use('/chat/*', requireAuth);
+app.use('/billing/checkout', requireAuth);
+app.use('/billing/portal', requireAuth);
 
-const routes = app.route('/auth', auth).route('/sessions', sessions).route('/chat', chat);
+const routes = app
+    .route('/auth', auth)
+    .route('/sessions', sessions)
+    .route('/chat', chat)
+    .route('billing', billing);
 
 export type AppType = typeof routes;
 

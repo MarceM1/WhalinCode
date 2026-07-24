@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { streamText as aiStreamText, stepCountIs } from 'ai';
 import { db } from '@whalincode/database/client';
 import { Mode, MessageStatus } from '@whalincode/database/enums';
-import type { Message, Prisma } from '@whalincode/database';
+import type { Prisma } from '@whalincode/database';
 import {
     type ChatStreamEvent,
     type MessagePart,
@@ -17,6 +17,11 @@ import { createTools } from '../tools';
 import { buildSystemPrompt } from '../system-prompt';
 import { isSupportedChatModel, resolveChatModel } from '../lib/models';
 import type { AuthenticateEnv } from '../middleware/require-auth';
+
+import type { LanguageModelUsage } from 'ai';
+import { requireCreditsBalance } from '../middleware/require-credits-balance';
+import { calculateCreditsForUsage } from '../lib/credits';
+import { ingestAiUsage } from '../lib/polar';
 
 const submitSchema = z.object({
     content: z.string(),
@@ -85,6 +90,7 @@ function getResumableUserMessage(
 
 type StreamParams = {
     sessionId: string;
+    userId: string;
     model: string;
     cwd: string | null;
     history: { role: 'user' | 'assistant'; content: string }[];
@@ -92,11 +98,16 @@ type StreamParams = {
     abortController: AbortController;
 };
 
+type IngestUsageForMessageParams = {
+    messageId: string;
+    status: 'complete' | 'interrupted';
+};
+
 async function streamAIResponse(
     stream: Parameters<Parameters<typeof streamSSE>[1]>[0],
     params: StreamParams,
 ) {
-    const { sessionId, model, history, mode, abortController, cwd } = params;
+    const { sessionId, userId, model, history, mode, abortController, cwd } = params;
     const startTime = Date.now();
     const tools = cwd ? createTools(cwd, mode) : undefined;
     const parts: MessagePart[] = [];
@@ -109,8 +120,9 @@ async function streamAIResponse(
     });
 
     const resolvedModel = resolveChatModel(model);
+    let completedUsage: LanguageModelUsage | null = null;
 
-    const persistInterrumpedMessage = async () => {
+    const persistInterruptedMessage = async () => {
         const fullText = parts
             .filter((part) => part.type === 'text')
             .map((part) => part.text)
@@ -123,7 +135,7 @@ async function streamAIResponse(
 
         const elapsedMs = Date.now() - startTime;
 
-        await db.message.create({
+        return db.message.create({
             data: {
                 sessionId,
                 role: 'ASSISTANT',
@@ -137,6 +149,41 @@ async function streamAIResponse(
         });
     };
 
+    const ingestUsageForMessage = async ({ messageId, status }: IngestUsageForMessageParams) => {
+        if (!completedUsage) return;
+
+        try {
+            const billableUsage = calculateCreditsForUsage({
+                provider: resolvedModel.provider,
+                model: resolvedModel.modelId,
+                usage: completedUsage,
+            });
+
+            await ingestAiUsage({
+                externalCustomerId: userId,
+                eventId: `chat-message:${messageId}`,
+                credits: billableUsage.credits,
+            });
+        } catch (error) {
+            console.error('Failed to ingest Polar AI usage for chat message', {
+                error,
+                sessionId,
+                messageId,
+                userId,
+            });
+        }
+    };
+
+    const persistInterruptedMessageAndUsage = async () => {
+        const interruptedMessage = await persistInterruptedMessage();
+        if (!interruptedMessage) return;
+
+        await ingestUsageForMessage({
+            messageId: interruptedMessage.id,
+            status: 'interrupted',
+        });
+    };
+
     try {
         const result = aiStreamText({
             model: resolvedModel.model,
@@ -146,13 +193,16 @@ async function streamAIResponse(
             stopWhen: tools ? stepCountIs(50) : undefined,
             abortSignal: abortController.signal,
             providerOptions: resolvedModel.providerOptions,
+            onFinish(event) {
+                completedUsage = event.totalUsage;
+            },
         });
 
         if (!result) return;
 
         for await (const part of result.fullStream) {
             if (stream.aborted) {
-                await persistInterrumpedMessage();
+                await persistInterruptedMessage();
                 return;
             }
 
@@ -240,7 +290,7 @@ async function streamAIResponse(
         }
 
         if (stream.aborted || abortController.signal.aborted) {
-            await persistInterrumpedMessage();
+            await persistInterruptedMessageAndUsage();
             return;
         }
 
@@ -265,6 +315,11 @@ async function streamAIResponse(
                 status: MessageStatus.COMPLETE,
                 duration: Math.round(elapsedMs / 1000),
             },
+        });
+
+        await ingestUsageForMessage({
+            messageId: assistantMessage.id,
+            status: 'complete',
         });
 
         const doneEvent: ChatStreamEvent = {
@@ -293,7 +348,7 @@ async function streamAIResponse(
         });
 
         if (abortController.signal.aborted) {
-            await persistInterrumpedMessage();
+            await persistInterruptedMessageAndUsage();
             return;
         }
 
@@ -383,6 +438,7 @@ const app = new Hono<AuthenticateEnv>()
                     try {
                         await streamAIResponse(stream, {
                             sessionId,
+                            userId,
                             model: resumableMessage.model,
                             cwd: session.cwd,
                             history,
@@ -422,7 +478,7 @@ const app = new Hono<AuthenticateEnv>()
             throw error;
         }
     })
-    .post('/:sessionId', submitValidator, async (c) => {
+    .post('/:sessionId', requireCreditsBalance, submitValidator, async (c) => {
         const sessionId = c.req.param('sessionId');
         const userId = c.get('userId');
 
@@ -476,6 +532,7 @@ const app = new Hono<AuthenticateEnv>()
 
                 await streamAIResponse(stream, {
                     sessionId,
+                    userId,
                     model: data.model,
                     cwd: session.cwd,
                     history,
