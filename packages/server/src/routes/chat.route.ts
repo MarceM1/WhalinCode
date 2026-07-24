@@ -202,7 +202,7 @@ async function streamAIResponse(
 
         for await (const part of result.fullStream) {
             if (stream.aborted) {
-                await persistInterruptedMessage();
+                await persistInterruptedMessageAndUsage();
                 return;
             }
 
@@ -375,7 +375,7 @@ async function streamAIResponse(
 }
 
 const app = new Hono<AuthenticateEnv>()
-    .post('/:sessionId/resume', async (c) => {
+    .post('/:sessionId/resume', requireCreditsBalance, async (c) => {
         const sessionId = c.req.param('sessionId');
         const userId = c.get('userId');
 
