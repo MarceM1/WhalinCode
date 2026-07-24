@@ -162,7 +162,7 @@ async function getMentionCandidates(query: string): Promise<MentionCandidate[]> 
         //     return directMatches;
         // }
 
-        if (directMatches.length > 0) {
+        if (directMatches.length > 0 || namePrefix === '' || namePrefix.length < 2) {
             return directMatches;
         }
 
