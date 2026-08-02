@@ -53,7 +53,7 @@ function ChatMessage({ msg }: { msg: Message }) {
     return (
         <BotMessage
             parts={msg.parts}
-            model={msg.metadata?.model ?? 'unknow'}
+            model={msg.metadata?.model ?? 'unknown'}
             mode={msg.metadata?.mode ?? 'BUILD'}
             durationMs={msg.metadata?.durationMs}
             streaming={false}

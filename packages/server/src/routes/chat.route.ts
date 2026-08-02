@@ -29,6 +29,20 @@ import { isSupportedChatModel, resolveChatModel } from '../lib/models';
 
 import * as Sentry from '@sentry/hono/bun';
 
+/**
+ * Numero máximo de mensajes acetables desde una unica peticion del cliente.
+ *
+ *Esto protege contra ataques de fuerza bruta y payloads excesivamente largos.
+ * La longitud de la conversación se administra por separado a través del mecanismo de compactación de contexto.
+ */
+/* 
+ TODO: Aplicar un límite al tamaño máximo del cuerpo de la solicitud HTTP (por   ejemplo, entre 1 y 5 MB).
+* Limitar únicamente la cantidad de mensajes no es suficiente, ya que un solo
+* mensaje puede contener una carga excesivamente grande. Este límite debería
+* aplicarse en el servidor HTTP o en el framework antes de procesar el cuerpo
+* de la solicitud.
+*/
+const MAX_INCOMING_MESSAGES = 50;
 type ChatMessageMetadata = {
     mode?: ModeType;
     model?: string;
@@ -48,7 +62,8 @@ const submitSchema = z.object({
                 );
             }),
         )
-        .min(1),
+        .min(1)
+        .max(MAX_INCOMING_MESSAGES),
     mode: modeSchema,
     model: z.string().refine(isSupportedChatModel, 'Unsupported chat model'),
 });
@@ -87,6 +102,11 @@ const app = new Hono<AuthenticateEnv>().post(
 
         const startTime = Date.now();
 
+        // TODO: Reforzar la sincronización de mensajes entre el cliente y el servidor.
+        // La estrategia actual de fusión confía en los mensajes entrantes únicamente por su ID.
+        // Durante la refactorización del protocolo de mensajes, validar las transiciones
+        // de estado permitidas (user, assistant, tool-call, tool-result) y verificar los
+        // resultados de las herramientas contra el outputSchema de cada una antes de fusionarlos.
         const tools = getToolContracts(mode);
         const resolvedModel = resolveChatModel(model);
         const previousMessages = Array.isArray(session.messages)
@@ -115,10 +135,15 @@ const app = new Hono<AuthenticateEnv>().post(
             }
         }
 
-        const nextMessages = await validateUIMessages<WhalincodeUIMessage>({
-            messages: mergedMessages,
-            tools,
-        });
+        let nextMessages: WhalincodeUIMessage[];
+        try {
+            nextMessages = await validateUIMessages<WhalincodeUIMessage>({
+                messages: mergedMessages,
+                tools,
+            });
+        } catch {
+            return c.json({ error: 'Invalid message history' }, 400);
+        }
 
         const modelMessages = await convertToModelMessages(nextMessages, { tools }); // evaluar type<WhalincodeUIMessage>
         let completedUsage: LanguageModelUsage | null = null;
@@ -128,6 +153,7 @@ const app = new Hono<AuthenticateEnv>().post(
             messages: modelMessages,
             tools,
             providerOptions: resolvedModel.providerOptions,
+            abortSignal: c.req.raw.signal,
             onFinish: (e) => {
                 completedUsage = e.usage; // 'totalUsage' deprecated
             },
@@ -156,12 +182,19 @@ const app = new Hono<AuthenticateEnv>().post(
 
                     if (hasPendingToolCalls(event.responseMessage)) return;
 
-                    await db.session.update({
-                        where: { id, userId },
-                        data: {
-                            messages: event.messages as unknown as Prisma.InputJsonValue,
-                        },
-                    });
+                    try {
+                        await db.session.update({
+                            where: { id, userId },
+                            data: {
+                                messages: event.messages as unknown as Prisma.InputJsonValue,
+                            },
+                        });
+                    } catch (error) {
+                        Sentry.captureException(error, {
+                            tags: { route: 'chat' },
+                            extra: { sessionId: id },
+                        });
+                    }
 
                     if (!completedUsage) return;
 
@@ -174,7 +207,7 @@ const app = new Hono<AuthenticateEnv>().post(
 
                         await ingestAiUsage({
                             externalCustomerId: userId,
-                            eventId: id,
+                            eventId: event.responseMessage.id,
                             credits: billableUsage.credits,
                         });
                     } catch (error) {
@@ -195,7 +228,11 @@ const app = new Hono<AuthenticateEnv>().post(
                     }
                 },
                 onError(error) {
-                    return error instanceof Error ? error.message : String(error);
+                    Sentry.captureException(error, {
+                        tags: { route: 'chat' },
+                        extra: { sessionId: id },
+                    });
+                    return 'The assistant failed to complete the response.';
                 },
             }),
         });

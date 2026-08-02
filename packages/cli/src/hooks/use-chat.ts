@@ -24,7 +24,7 @@ type ChatTools = {
     // por cada una, preservando su tipo de `input` y definiendo un `output`.
     [Name in keyof InferUITools<ToolContracts>]: {
         input: InferUITools<ToolContracts>[Name]['input'];
-        output: unknown;
+        output: InferUITools<ToolContracts>[Name]['output'];
     };
 };
 
@@ -75,14 +75,21 @@ export function useChat(sessionId: string, initialMessage: Message[]) {
         messages: initialMessage,
         transport,
         onToolCall({ toolCall }) {
-            const mode = chat.messages.at(-1)?.metadata?.mode ?? 'BUILD';
+            const mode = chat.messages.findLast((m) => m.metadata?.mode)?.metadata?.mode ?? 'BUILD';
+
+            const toolName = toolCall.toolName as keyof ChatTools;
 
             void executeLocalTool(toolCall.toolName, toolCall.input, mode)
                 .then((output) =>
                     chat.addToolOutput({
                         tool: toolCall.toolName as keyof ChatTools,
                         toolCallId: toolCall.toolCallId,
-                        output,
+                        // TODO: Tipar executeLocalTool para preservar la relación entre el nombre de
+                        // la herramienta y su output. Actualmente devuelve una unión de todos los
+                        // resultados posibles, por lo que necesitamos este cast para satisfacer
+                        // chat.addToolOutput. La implementación ideal debe inferir el output según
+                        // el toolName recibido
+                        output: output as ChatTools[typeof toolName]['output'],
                     }),
                 )
                 .catch((error) =>

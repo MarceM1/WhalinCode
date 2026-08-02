@@ -25,7 +25,7 @@ function isToolPart(part: ClientMessagePart): part is ToolPart {
 }
 
 function formatToolArgs(tc: ToolPart): string {
-    if (!('input' in tc) || tc.input === null) return '';
+    if (!('input' in tc) || tc.input == null) return '';
     if (typeof tc.input !== 'object') return String(tc.input);
 
     return Object.values(tc.input).map(String).join(' ');
@@ -36,13 +36,17 @@ type PartGroup = {
     parts: ClientMessagePart[];
     key: string;
 };
+function isRenderablePart(part: ClientMessagePart): boolean {
+    return part.type === 'text' || part.type === 'reasoning' || isToolPart(part);
+}
 
 // Esta funcion es más cosmética que funcional. Se ve mucho mejor que, por ejemplo, todas las partes que correspondan a thinking
 // se agrupen bajo un solo thinking en la ui, a que cada una de ellas corresponda a un "paso" de la construcción del plan
 function groupConsecutiveParts(parts: ClientMessagePart[]): PartGroup[] {
     const groups: PartGroup[] = [];
-    for (let i = 0; i < parts.length; i++) {
-        const part = parts[i]!;
+    const renderable = parts.filter(isRenderablePart);
+    for (let i = 0; i < renderable.length; i++) {
+        const part = renderable[i]!;
         const lastGroup = groups[groups.length - 1];
 
         if (lastGroup && lastGroup.type === part.type) {
@@ -116,7 +120,10 @@ export function BotMessage({ parts, model, mode, durationMs, streaming = false }
                                         part.state !== 'output-error'
                                             ? '...'
                                             : ''}
-                                        {part.state === 'output-error' ? `${part.errorText}` : ''}
+                                        {part.state === 'output-error' && (
+                                            <em fg={colors.error}>{part.errorText}</em>
+                                            // existe la posibilidad de que text andidado en text ocasione error, en ese aso, cambiar por em
+                                        )}
                                     </text>
                                 </box>
                             );

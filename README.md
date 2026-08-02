@@ -216,7 +216,15 @@ src/
 └── index.tsx            → Entry point (router + renderer)
 ```
 
-Su responsabilidad consiste únicamente en representar el estado del runtime, ejecutar herramientas localmente e interactuar con el usuario.
+Su responsabilidad consiste en:
+
+- Representar el estado del runtime
+- Ejecutar herramientas localmente
+- Administrar el cliente de autenticación local (PKCE OAuth, credential store)
+- Gestionar credenciales y tokens locales (`~/.whalincode/auth.json`)
+- Interactuar con el usuario
+
+El servidor es responsable de verificar los tokens OAuth antes de autorizar cualquier solicitud.
 
 ### Server (`@whalincode/server`)
 
@@ -343,7 +351,7 @@ Además de las anteriores:
 
 Las herramientas se ejecutan localmente en el CLI. La ejecución incluye:
 
-- Path sandboxing (no permite acceso fuera del directorio del proyecto)
+- Confinamiento de rutas para las herramientas de archivos
 - Lectura parcial de archivos mediante rangos de líneas (`startLine` / `endLine`)
 - Recuperación progresiva de contexto (`grep` → `readFile(range)`)
 - Truncado de archivos grandes
@@ -383,7 +391,7 @@ Edit / Execute
 En lugar de cargar archivos completos:
 
 ```text
-readFile(file.ts)
+readFile({path: file.ts})
 ↓
 500 líneas enviadas al modelo
 ```
@@ -395,11 +403,11 @@ grep("authentication")
 ↓
 auth.ts:120
 ↓
-readFile(
-    auth.ts,
-    startLine:110,
-    endLine:140
-)
+readFile({
+    path: auth.ts,
+    startLine: 110,
+    endLine: 140
+})
 ↓
 30 líneas relevantes
 ```
@@ -477,15 +485,11 @@ Usage Metering (Polar ingestion)
 
 ### CLI
 
-| Variable                    | Descripción                  |
-| --------------------------- | ---------------------------- |
-| `API_URL`                   | URL base del servidor        |
-| `CLERK_FRONTEND_API`        | Frontend API de Clerk        |
-| `CLERK_OAUTH_CLIENT_ID`     | Client ID de OAuth           |
-| `CLERK_OAUTH_CLIENT_SECRET` | Client secret de OAuth       |
-| `JWT_SECRET`                | Secret para verificación JWT |
-| `CLERK_PUBLISHABLE_KEY`     | Publishable key de Clerk     |
-| `CLERK_SECRET_KEY`          | Secret key de Clerk          |
+| Variable                | Descripción           |
+| ----------------------- | --------------------- |
+| `API_URL`               | URL del servidor API  |
+| `CLERK_FRONTEND_API`    | Frontend API de Clerk |
+| `CLERK_OAUTH_CLIENT_ID` | Client ID de OAuth    |
 
 ---
 

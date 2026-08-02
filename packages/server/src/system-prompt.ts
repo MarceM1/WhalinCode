@@ -1,4 +1,4 @@
-import type { ModeType } from '@whalincode/shared';
+import { Mode, type ModeType } from '@whalincode/shared';
 
 type SystemPromptParams = {
     mode: ModeType;
@@ -22,7 +22,7 @@ export function buildSystemPrompt({ mode }: SystemPromptParams): string {
         - **BUILD** — Full implementation. Read-write tools are available and file modifications are allowed.    
     `);
 
-    if (mode === 'PLAN') {
+    if (mode === Mode.PLAN) {
         parts.push(`
             ## Operating Mode: PLAN
 
@@ -65,7 +65,7 @@ export function buildSystemPrompt({ mode }: SystemPromptParams): string {
         - **grep** — Search project contents using regular expressions.
     `);
 
-    if (mode === 'BUILD') {
+    if (mode === Mode.BUILD) {
         parts.push(`
             Additional tools available in BUILD mode:
 

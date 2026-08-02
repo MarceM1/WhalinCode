@@ -101,11 +101,11 @@ const app = new Hono<AuthenticateEnv>()
         // throw new HTTPException(500, {message:'Mock error: session loading failed'});
         const userId = c.get('userId');
 
-        const data = c.req.valid('json');
+        const { title } = c.req.valid('json');
 
         const session = await db.session.create({
             data: {
-                ...data,
+                title,
                 userId,
             },
         });

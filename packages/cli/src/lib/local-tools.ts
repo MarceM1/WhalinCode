@@ -1,16 +1,22 @@
 import { constants } from 'fs';
-import { mkdir, readFile, readdir, stat, writeFile, access } from 'fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile, access, realpath } from 'fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, extname } from 'path';
 import { toolInputSchemas, Mode, type ModeType } from '@whalincode/shared';
 import fg from 'fast-glob';
 import { clearTimeout } from 'timers';
+import { readOnlyToolNames } from '../../../shared/src/schemas';
+import { check } from 'recheck';
 
-const MAX_FILE_SIZE = 10_000;
+// Prevent loading very large files into context while allowing normal source files.
+// Large files should be inspected using startLine/endLine ranges.
+const MAX_FILE_SIZE = 175_000;
 const MAX_RESULTS = 200;
 const MAX_MATCHES = 50;
 const MAX_OUTPUT = 20_000;
 const DEFAULT_TIMEOUT = 30_000;
-const DEFAULT_SEARCH_IGNORE_PATTERNS: string[] = ['**/node_modules/**', '**/.git/**'];
+const DEFAULT_IGNORED_DIRECTORY_NAMES = new Set(['node_modules', '.git']);
+const MAX_GREP_FILE_SIZE = 1_000_000;
+const MAX_GREP_DURATION_MS = 10_000;
 
 const BINARY_EXTENSIONS = new Set([
     '.png',
@@ -47,9 +53,29 @@ const BINARY_EXTENSIONS = new Set([
     '.lib',
 ]);
 
-function resolveInsideCwd(path: string) {
-    const cwd = process.cwd();
-    const resolved = resolve(cwd, path);
+async function realPathofNearesExisting(target: string): Promise<string> {
+    let current = target;
+    const suffixes: string[] = [];
+
+    // Sube hasta el primer ancestro existente para poder resolver symlinks
+    // incluso cuando el archivo destino aún no existe
+    for (;;) {
+        try {
+            return resolve(await realpath(current), ...suffixes.reverse());
+        } catch {
+            const parent = dirname(current);
+            if (parent === current) {
+                return target;
+            }
+            suffixes.push(relative(parent, current));
+            current = parent;
+        }
+    }
+}
+
+async function resolveInsideCwd(path: string) {
+    const cwd = await realpath(process.cwd());
+    const resolved = await realPathofNearesExisting(resolve(cwd, path));
     const rel = relative(cwd, resolved);
 
     if (rel.startsWith('..') || isAbsolute(rel)) {
@@ -103,6 +129,74 @@ async function getShell(): Promise<string[]> {
     );
 }
 
+const decoder = new TextDecoder();
+
+export interface ReadLimitedStreamResult {
+    text: string;
+    truncated: boolean;
+}
+
+export async function readLimitedStream(
+    stream: ReadableStream<Uint8Array>,
+    maxBytes: number,
+): Promise<ReadLimitedStreamResult> {
+    const reader = stream.getReader();
+
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    let truncated = false;
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) {
+                break;
+            }
+
+            if (!value) {
+                continue;
+            }
+
+            const remaining = maxBytes - totalBytes;
+
+            if (remaining <= 0) {
+                truncated = true;
+                await reader.cancel();
+                break;
+            }
+
+            if (value.byteLength <= remaining) {
+                chunks.push(value);
+                totalBytes += value.byteLength;
+                continue;
+            }
+
+            chunks.push(value.subarray(0, remaining));
+            totalBytes += remaining;
+            truncated = true;
+
+            await reader.cancel();
+            break;
+        }
+    } finally {
+        reader.releaseLock();
+    }
+
+    const buffer = new Uint8Array(totalBytes);
+
+    let offset = 0;
+
+    for (const chunk of chunks) {
+        buffer.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+
+    return {
+        text: decoder.decode(buffer),
+        truncated,
+    };
+}
 function truncate(value: string, limit: number) {
     return value.length > limit
         ? `${value.slice(0, limit)}\n... (truncated, ${value.length} totalchars)`
@@ -110,14 +204,25 @@ function truncate(value: string, limit: number) {
 }
 
 export async function executeLocalTool(toolName: string, input: unknown, mode: ModeType) {
-    if (mode === Mode.PLAN && !['readFile', 'listDirectory', 'glob', 'grep'].includes(toolName)) {
+    if (mode === Mode.PLAN && !readOnlyToolNames.includes(toolName as never)) {
         throw new Error(`Tool ${toolName} is not available in PLAN mode`);
     }
 
     switch (toolName) {
         case 'readFile': {
             const { path, startLine, endLine } = toolInputSchemas.readFile.parse(input);
-            const { resolved } = resolveInsideCwd(path);
+            const { resolved } = await resolveInsideCwd(path);
+            const info = await stat(resolved);
+
+            if (!info.isFile()) {
+                throw new Error('Path is not a file.');
+            }
+
+            if (!startLine && !endLine && info.size > MAX_FILE_SIZE) {
+                throw new Error(
+                    `File is ${info.size} bytes, which exceeds the ${MAX_FILE_SIZE} byte limit.  Request a line range with startLine and endLine.`,
+                );
+            }
             const content = await readFile(resolved, 'utf-8');
 
             const lines = content.split('\n');
@@ -141,15 +246,17 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
         }
         case 'listDirectory': {
             const { path } = toolInputSchemas.listDirectory.parse(input);
-            const { cwd, resolved } = resolveInsideCwd(path);
-            const entries = await readdir(resolved);
+            const { cwd, resolved } = await resolveInsideCwd(path);
+            const entries = await readdir(resolved, { withFileTypes: true });
             const results: { name: string; type: 'file' | 'directory' }[] = [];
 
             for (const entry of entries) {
-                if (entry.startsWith('.') || DEFAULT_SEARCH_IGNORE_PATTERNS.includes(entry))
+                if (entry.name.startsWith('.') || DEFAULT_IGNORED_DIRECTORY_NAMES.has(entry.name))
                     continue;
-                const info = await stat(join(resolved, entry));
-                results.push({ name: entry, type: info.isDirectory() ? 'directory' : 'file' });
+                results.push({
+                    name: entry.name,
+                    type: entry.isDirectory() ? 'directory' : 'file',
+                });
             }
 
             results.sort((a, b) =>
@@ -164,13 +271,13 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
         }
         case 'glob': {
             const { pattern, path } = toolInputSchemas.glob.parse(input);
-            const { cwd, resolved } = resolveInsideCwd(path);
+            const { cwd, resolved } = await resolveInsideCwd(path);
 
             const matches = await fg(pattern, {
                 cwd: resolved,
                 onlyFiles: true,
                 dot: true,
-                ignore: DEFAULT_SEARCH_IGNORE_PATTERNS,
+                ignore: Array.from(DEFAULT_IGNORED_DIRECTORY_NAMES),
             });
 
             const files = matches
@@ -181,7 +288,15 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
         }
         case 'grep': {
             const { path, pattern, include, contextLines } = toolInputSchemas.grep.parse(input);
-            const { cwd, resolved } = resolveInsideCwd(path);
+            const { cwd, resolved } = await resolveInsideCwd(path);
+
+            const analysis = await check(pattern, '');
+
+            if (analysis.status !== 'safe') {
+                throw new Error(
+                    `Regular expression failed safety validation (${analysis.status}).`,
+                );
+            }
 
             let regex: RegExp;
 
@@ -195,7 +310,7 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
                 cwd: resolved,
                 onlyFiles: true,
                 dot: true,
-                ignore: DEFAULT_SEARCH_IGNORE_PATTERNS,
+                ignore: Array.from(DEFAULT_IGNORED_DIRECTORY_NAMES),
             });
 
             const matches: {
@@ -206,13 +321,25 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
             }[] = [];
 
             let truncated = false;
+            const deadline = Date.now() + MAX_GREP_DURATION_MS;
 
             for (const file of files) {
+                if (Date.now() > deadline) {
+                    truncated = true;
+                    break;
+                }
+
                 if (BINARY_EXTENSIONS.has(extname(file))) {
                     continue;
                 }
 
                 const absolutePath = resolve(resolved, file);
+
+                try {
+                    if ((await stat(absolutePath)).size > MAX_GREP_FILE_SIZE) continue;
+                } catch {
+                    continue;
+                }
 
                 let content: string;
 
@@ -226,22 +353,27 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
                 const lines = content.split(/\r?\n/);
 
                 for (let i = 0; i < lines.length; i++) {
-                    regex.lastIndex = 0;
-
                     if (!regex.test(lines[i]!)) {
                         continue;
                     }
 
                     const lineNumber = i + 1;
+                    const startLine = Math.max(1, lineNumber - contextLines);
+                    const endLine = Math.min(lines.length, lineNumber + contextLines);
 
                     matches.push({
                         file: relative(cwd, absolutePath),
                         line: lineNumber,
                         content: lines[i]!,
-                        range: {
-                            startLine: Math.max(1, lineNumber - contextLines),
-                            endLine: Math.min(lines.length, lineNumber + contextLines),
-                        },
+                        ...(contextLines > 0
+                            ? {
+                                  range: {
+                                      startLine,
+                                      endLine,
+                                  },
+                                  context: lines.slice(startLine - 1, endLine).join('\n'),
+                              }
+                            : {}),
                     });
 
                     if (matches.length >= MAX_MATCHES) {
@@ -253,16 +385,13 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
                     break;
                 }
             }
-            if (matches.length === 0) {
-                return {
-                    matches: [],
-                    message: 'No matches found.',
-                    filesScanned: files.length,
-                };
-            }
-
             return {
                 matches,
+                ...(matches.length === 0
+                    ? {
+                          message: 'No matches found.',
+                      }
+                    : {}),
                 filesScanned: files.length,
                 ...(truncated
                     ? {
@@ -274,7 +403,7 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
         }
         case 'writeFile': {
             const { path, content } = toolInputSchemas.writeFile.parse(input);
-            const { cwd, resolved } = resolveInsideCwd(path);
+            const { cwd, resolved } = await resolveInsideCwd(path);
 
             await mkdir(dirname(resolved), { recursive: true });
             await writeFile(resolved, content, 'utf-8');
@@ -287,15 +416,19 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
         }
         case 'editFile': {
             const { path, oldString, newString } = toolInputSchemas.editFile.parse(input);
-            const { cwd, resolved } = resolveInsideCwd(path);
+            const { cwd, resolved } = await resolveInsideCwd(path);
             const content = await readFile(resolved, 'utf-8');
-            const ocurrences = content.split(oldString).length - 1;
+            const occurrences = content.split(oldString).length - 1;
 
-            if (ocurrences === 0) throw new Error('oldString not foun in file');
-            if (ocurrences > 1)
-                throw new Error(`oldString is ambiguous; found ${ocurrences} matches`);
+            if (occurrences === 0) throw new Error('oldString not foun in file');
+            if (occurrences > 1)
+                throw new Error(`oldString is ambiguous; found ${occurrences} matches`);
 
-            await writeFile(resolved, content.replace(oldString, newString), 'utf-8');
+            await writeFile(
+                resolved,
+                content.replace(oldString, () => newString),
+                'utf-8',
+            );
             return { success: true as const, path: relative(cwd, resolved) };
         }
         case 'bash': {
@@ -304,27 +437,38 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
             const shell = await getShell();
 
             const proc = Bun.spawn([...shell, command], {
-                cwd: resolveInsideCwd('.').resolved,
+                cwd: (await resolveInsideCwd('.')).resolved,
                 stdout: 'pipe',
                 stderr: 'pipe',
                 env: { ...process.env, TERM: 'dumb' },
             });
 
             const timer = setTimeout(() => proc.kill(), timeout);
-            const [stdout, stderr] = await Promise.all([
-                new Response(proc.stdout).text(),
-                new Response(proc.stderr).text(),
-            ]);
+            try {
+                const [stdout, stderr] = await Promise.all([
+                    readLimitedStream(proc.stdout, MAX_OUTPUT),
+                    readLimitedStream(proc.stderr, MAX_OUTPUT),
+                ]);
 
-            const exitCode = await proc.exited;
+                const exitCode = await proc.exited;
 
-            clearTimeout(timer);
-
-            return {
-                stdout: truncate(stdout, MAX_OUTPUT),
-                stderr: truncate(stderr, MAX_OUTPUT),
-                exitCode,
-            };
+                return {
+                    stdout: stdout.text,
+                    stderr: stderr.text,
+                    truncated: {
+                        stdout: stdout.truncated,
+                        stderr: stderr.truncated,
+                    },
+                    exitCode,
+                };
+            } catch (error) {
+                if (!proc.killed) {
+                    proc.kill();
+                }
+                throw error;
+            } finally {
+                clearTimeout(timer);
+            }
         }
         default:
             throw new Error(`Unknown tool: ${toolName}`);
