@@ -1,12 +1,16 @@
 import { createContext, useContext, useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
-import { DEFAULT_CHAT_MODEL_ID, type SupportedChatModelId } from '@whalincode/shared';
-import { Mode } from '@whalincode/database/enums';
+import {
+    DEFAULT_CHAT_MODEL_ID,
+    Mode,
+    type SupportedChatModelId,
+    type ModeType,
+} from '@whalincode/shared';
 
 type PromptConfigContextValue = {
-    mode: Mode;
+    mode: ModeType;
     toggleMode: () => void;
-    setMode: (mode: Mode) => void;
+    setMode: (mode: ModeType) => void;
     model: SupportedChatModelId;
     setModel: (model: SupportedChatModelId) => void;
 };
@@ -17,16 +21,16 @@ export function usePromptConfig(): PromptConfigContextValue {
     const value = useContext(PromptConfigContext);
     if (!value) {
         throw new Error('usePromptConfig must be used within a PromptConfigProvider');
-    };
+    }
     return value;
-};
+}
 
 type PromptConfigProviderProps = {
     children: ReactNode;
 };
 
 export function PromptConfigProvider({ children }: PromptConfigProviderProps) {
-    const [mode, setMode] = useState<Mode>(Mode.BUILD);
+    const [mode, setMode] = useState<ModeType>(Mode.BUILD);
     const [model, setModel] = useState<SupportedChatModelId>(DEFAULT_CHAT_MODEL_ID);
 
     const toggleMode = useCallback(() => {
@@ -40,10 +44,10 @@ export function PromptConfigProvider({ children }: PromptConfigProviderProps) {
                 toggleMode,
                 setMode,
                 model,
-                setModel
+                setModel,
             }}
         >
             {children}
         </PromptConfigContext.Provider>
     );
-};
+}

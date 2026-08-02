@@ -22,7 +22,7 @@ import { usePromptConfig } from '../providers/prompt-config';
 
 import { useNavigate } from 'react-router';
 
-import { Mode } from '@whalincode/database/enums';
+import { Mode } from '@whalincode/shared';
 
 /**
  * ----------------------------------------------------------------------------------------------------

@@ -1,8 +1,8 @@
-import { TextAttributes } from "@opentui/core";
-import type { ReactNode } from "react";
-import { InputBar } from "./input-bar";
-import { Spinner } from "./spinner";
-import { usePromptConfig } from "../providers/prompt-config";
+import { TextAttributes } from '@opentui/core';
+import type { ReactNode } from 'react';
+import { InputBar } from './input-bar';
+import { Spinner } from './spinner';
+import { usePromptConfig } from '../providers/prompt-config';
 
 type Props = {
     children?: ReactNode;
@@ -17,7 +17,7 @@ export function SessionShell({
     onSubmit,
     inputDisabled = false,
     loading = false,
-    interruptible = false
+    interruptible = false,
 }: Props) {
     const { mode } = usePromptConfig();
 
@@ -31,10 +31,8 @@ export function SessionShell({
             paddingX={2}
             paddingY={1}
         >
-            <scrollbox flexGrow={1} width={"100%"} stickyScroll stickyStart={'bottom'}>
-                <box gap={1}>
-                    {children}
-                </box>
+            <scrollbox flexGrow={1} width={'100%'} stickyScroll stickyStart={'bottom'}>
+                <box>{children}</box>
             </scrollbox>
             <box flexShrink={0}>
                 <InputBar onSubmit={onSubmit} disabled={inputDisabled} />
@@ -48,11 +46,7 @@ export function SessionShell({
                 height={1}
                 paddingLeft={1}
             >
-                <box
-                    flexDirection="row"
-                    alignItems="center"
-                    gap={2}
-                >
+                <box flexDirection="row" alignItems="center" gap={2}>
                     {loading ? (
                         <>
                             <Spinner mode={mode} />
@@ -61,16 +55,11 @@ export function SessionShell({
                     ) : null}
                 </box>
 
-                <box
-                    flexDirection="row"
-                    gap={1}
-                    flexShrink={0}
-                    marginLeft={'auto'}
-                >
+                <box flexDirection="row" gap={1} flexShrink={0} marginLeft={'auto'}>
                     <text>tab</text>
                     <text attributes={TextAttributes.DIM}>agents</text>
                 </box>
             </box>
         </box>
     );
-};
+}

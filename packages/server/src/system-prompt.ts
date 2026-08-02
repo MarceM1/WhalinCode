@@ -1,11 +1,10 @@
-import { Mode } from '@whalincode/database/enums';
+import type { ModeType } from '@whalincode/shared';
 
-type SystemPrompt = {
-    cwd: string | null;
-    mode: Mode;
+type SystemPromptParams = {
+    mode: ModeType;
 };
 
-export function buildSystemPrompt({ cwd, mode }: SystemPrompt): string {
+export function buildSystemPrompt({ mode }: SystemPromptParams): string {
     const parts: string[] = [];
 
     parts.push(`You are WhalinCode, an AI software engineering agent operating inside a
@@ -22,10 +21,6 @@ export function buildSystemPrompt({ cwd, mode }: SystemPrompt): string {
         - **PLAN** — Read-only analysis and planning. No file modifications are allowed.
         - **BUILD** — Full implementation. Read-write tools are available and file modifications are allowed.    
     `);
-
-    if (cwd) {
-        parts.push(`\nThe user's project directory is: ${cwd}`);
-    }
 
     if (mode === 'PLAN') {
         parts.push(`
@@ -70,7 +65,7 @@ export function buildSystemPrompt({ cwd, mode }: SystemPrompt): string {
         - **grep** — Search project contents using regular expressions.
     `);
 
-    if (mode === Mode.BUILD) {
+    if (mode === 'BUILD') {
         parts.push(`
             Additional tools available in BUILD mode:
 
@@ -90,7 +85,7 @@ export function buildSystemPrompt({ cwd, mode }: SystemPrompt): string {
         5. Batch independent tool calls whenever possible instead of executing them sequentially.
     `);
 
-    if (mode === Mode.BUILD) {
+    if (mode === 'BUILD') {
         parts.push(`
             Additional BUILD rules:
 

@@ -16,12 +16,13 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.40",
     "@opentui/core": "^0.2.15",
     "@opentui/react": "^0.2.15",
-    "@whalincode/database": "workspace:*",
     "@whalincode/shared": "workspace:*",
+    "ai": "^7.0.37",
     "date-fns": "^4.4.0",
-    "eventsource-parser": "^3.1.0",
+    "fast-glob": "^3.3.3",
     "hono": "^4.12.23",
     "open": "^11.0.0",
     "opentui-spinner": "^0.0.6",
