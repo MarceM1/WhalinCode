@@ -85,7 +85,7 @@ export function buildSystemPrompt({ mode }: SystemPromptParams): string {
         5. Batch independent tool calls whenever possible instead of executing them sequentially.
     `);
 
-    if (mode === 'BUILD') {
+    if (mode === Mode.BUILD) {
         parts.push(`
             Additional BUILD rules:
 

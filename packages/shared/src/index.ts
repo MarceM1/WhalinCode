@@ -13,6 +13,7 @@ export {
     modeSchema,
     type ModeType,
     toolInputSchemas,
+    readOnlyToolNames,
     readOnlyToolContracts,
     buildToolContracts,
     type ToolContracts,

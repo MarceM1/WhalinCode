@@ -1,20 +1,21 @@
 import { constants } from 'fs';
 import { mkdir, readFile, readdir, stat, writeFile, access, realpath } from 'fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, extname } from 'path';
-import { toolInputSchemas, Mode, type ModeType } from '@whalincode/shared';
+import { toolInputSchemas, Mode, readOnlyToolNames, type ModeType } from '@whalincode/shared';
 import fg from 'fast-glob';
 import { clearTimeout } from 'timers';
-import { readOnlyToolNames } from '../../../shared/src/schemas';
 import { check } from 'recheck';
 
 // Prevent loading very large files into context while allowing normal source files.
 // Large files should be inspected using startLine/endLine ranges.
 const MAX_FILE_SIZE = 175_000;
+const MAX_RANGE_FILE_SIZE = 50_000_000;
 const MAX_RESULTS = 200;
 const MAX_MATCHES = 50;
 const MAX_OUTPUT = 20_000;
 const DEFAULT_TIMEOUT = 30_000;
 const DEFAULT_IGNORED_DIRECTORY_NAMES = new Set(['node_modules', '.git']);
+const DEFAULT_IGNORED_GLOBS: string[] = ['**/node_modules/**', '**/.git/**'];
 const MAX_GREP_FILE_SIZE = 1_000_000;
 const MAX_GREP_DURATION_MS = 10_000;
 
@@ -53,7 +54,7 @@ const BINARY_EXTENSIONS = new Set([
     '.lib',
 ]);
 
-async function realPathofNearesExisting(target: string): Promise<string> {
+async function realPathOfNearesExisting(target: string): Promise<string> {
     let current = target;
     const suffixes: string[] = [];
 
@@ -75,7 +76,7 @@ async function realPathofNearesExisting(target: string): Promise<string> {
 
 async function resolveInsideCwd(path: string) {
     const cwd = await realpath(process.cwd());
-    const resolved = await realPathofNearesExisting(resolve(cwd, path));
+    const resolved = await realPathOfNearesExisting(resolve(cwd, path));
     const rel = relative(cwd, resolved);
 
     if (rel.startsWith('..') || isAbsolute(rel)) {
@@ -223,6 +224,12 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
                     `File is ${info.size} bytes, which exceeds the ${MAX_FILE_SIZE} byte limit.  Request a line range with startLine and endLine.`,
                 );
             }
+
+            if (info.size > MAX_RANGE_FILE_SIZE) {
+                throw new Error(
+                    `File is ${info.size} bytes, which exceeds the ${MAX_RANGE_FILE_SIZE} byte limit.  Request a smaller line range with startLine and endLine.`,
+                );
+            }
             const content = await readFile(resolved, 'utf-8');
 
             const lines = content.split('\n');
@@ -277,7 +284,7 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
                 cwd: resolved,
                 onlyFiles: true,
                 dot: true,
-                ignore: Array.from(DEFAULT_IGNORED_DIRECTORY_NAMES),
+                ignore: DEFAULT_IGNORED_GLOBS,
             });
 
             const files = matches
@@ -310,7 +317,7 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
                 cwd: resolved,
                 onlyFiles: true,
                 dot: true,
-                ignore: Array.from(DEFAULT_IGNORED_DIRECTORY_NAMES),
+                ignore: DEFAULT_IGNORED_GLOBS,
             });
 
             const matches: {
@@ -318,6 +325,7 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
                 line: number;
                 content: string;
                 range?: { startLine: number; endLine: number };
+                context?: string;
             }[] = [];
 
             let truncated = false;
@@ -443,7 +451,16 @@ export async function executeLocalTool(toolName: string, input: unknown, mode: M
                 env: { ...process.env, TERM: 'dumb' },
             });
 
-            const timer = setTimeout(() => proc.kill(), timeout);
+            const timer = setTimeout(() => {
+                proc.kill();
+
+                setTimeout(() => {
+                    if (!proc.killed) {
+                        proc.kill('SIGKILL');
+                    }
+                }, 1000);
+            }, timeout);
+
             try {
                 const [stdout, stderr] = await Promise.all([
                     readLimitedStream(proc.stdout, MAX_OUTPUT),
