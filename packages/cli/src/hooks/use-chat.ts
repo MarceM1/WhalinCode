@@ -1,428 +1,123 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { EventSourceParserStream } from 'eventsource-parser/stream';
-import prettyMs from 'pretty-ms';
-import type { ClientResponse } from 'hono/client';
+import { useMemo } from 'react';
+import { useChat as useAiChat } from '@ai-sdk/react';
+import {
+    DefaultChatTransport,
+    type InferUITools,
+    lastAssistantMessageIsCompleteWithToolCalls,
+    type LanguageModelUsage,
+    type UIMessage,
+} from 'ai';
+import type { ModeType, SupportedChatModelId, ToolContracts } from '@whalincode/shared';
 import { apiClient } from '../lib/api-client';
-import { getErrorMessage } from '../lib/http-errors';
-import type { Mode } from '@whalincode/database/enums';
-import { chatStreamEventSchema, type SupportedChatModelId } from '@whalincode/shared';
+import { getAuth } from '../lib/auth';
+import { executeLocalTool } from '../lib/local-tools';
 
-export type ClientToolCallPart = {
-    type: 'tool-call';
-    id: string;
-    name: string;
-    args: Record<string, unknown>;
-    result?: string;
-    status: 'calling' | 'done';
-}; // TODO: Ver como inferir luego ya sea de hono, prisma, shared package.
-
-export type ClientMessagePart =
-    { type: 'reasoning'; text: string } | ClientToolCallPart | { type: 'text'; text: string };
-
-export type Message =
-    | {
-          id: string;
-          role: 'user';
-          content: string;
-          mode: Mode;
-          model: SupportedChatModelId;
-      }
-    | {
-          id: string;
-          role: 'assistant';
-          content: string;
-          mode: Mode;
-          model: SupportedChatModelId;
-          parts: ClientMessagePart[];
-          duration?: string;
-          interrupted?: boolean;
-      }
-    | {
-          id: string;
-          role: 'error';
-          content: string;
-      };
-
-type StreamingState =
-    | {
-          status: 'idle';
-      }
-    | {
-          status: 'streaming';
-          parts: ClientMessagePart[];
-          mode: Mode;
-          model: SupportedChatModelId;
-      };
-
-type ActiveStream = {
-    requestId: string;
-    controller: AbortController;
-    mode: Mode;
-    model: SupportedChatModelId;
-    parts: ClientMessagePart[];
-    interruptedCaptured: boolean;
+export type ChatMessageMetadata = {
+    mode?: ModeType;
+    model?: SupportedChatModelId | string;
+    durationMs?: number;
+    usage?: LanguageModelUsage;
 };
 
-type SubmitParams = {
-    userText: string;
-    mode: Mode;
-    model: SupportedChatModelId;
+type ChatTools = {
+    // Mapped type: recorre todas las herramientas inferidas y crea una propiedad
+    // por cada una, preservando su tipo de `input` y definiendo un `output`.
+    [Name in keyof InferUITools<ToolContracts>]: {
+        input: InferUITools<ToolContracts>[Name]['input'];
+        output: InferUITools<ToolContracts>[Name]['output'];
+    };
 };
 
-type RunStreamParams = {
-    mode: Mode;
-    model: SupportedChatModelId;
-    request: (controller: AbortController) => Promise<ClientResponse<unknown>>;
-};
+export type Message = UIMessage<ChatMessageMetadata, never, ChatTools>;
 
-export function useChat(sessionId: string, initialMessages: Message[]) {
-    const [messages, setMessages] = useState<Message[]>(initialMessages);
-    const [streaming, setStreaming] = useState<StreamingState>({ status: 'idle' });
-    const activeStreamRef = useRef<ActiveStream | null>(null);
+export function useChat(sessionId: string, initialMessage: Message[]) {
+    const transport = useMemo(() => {
+        return new DefaultChatTransport<Message>({
+            api: apiClient.chat.$url().toString(),
+            headers() {
+                const auth = getAuth();
+                return auth ? { Authorization: `Bearer ${auth.token}` } : new Headers();
+            },
+            prepareSendMessagesRequest({ messages }) {
+                const message = messages[messages.length - 1];
+                if (!message) {
+                    throw new Error('No message send');
+                }
 
-    const updateMessages = useCallback((updater: (prev: Message[]) => Message[]) => {
-        setMessages((prev) => updater(prev));
-    }, []);
+                const metadata = messages.findLast(
+                    (m) => m.metadata?.mode && m.metadata?.model,
+                )?.metadata;
 
-    const isActiveRequest = useCallback((requestId: string) => {
-        return activeStreamRef.current?.requestId === requestId;
-    }, []);
+                if (!metadata) {
+                    throw new Error('No chat metadata found');
+                }
 
-    const emitParts = useCallback(
-        (requestId: string, parts: ClientMessagePart[]) => {
-            if (!isActiveRequest(requestId)) return;
+                const previousMessage = messages[messages.length - 2];
+                const requestMessage =
+                    message.role === 'assistant' && previousMessage?.role === 'user'
+                        ? [previousMessage, message]
+                        : [message];
 
-            const snapshot = [...parts];
-            const activeStream = activeStreamRef.current;
-            if (!activeStream) return;
-
-            activeStream.parts = snapshot;
-
-            setStreaming({
-                status: 'streaming',
-                parts: snapshot,
-                mode: activeStream.mode,
-                model: activeStream.model,
-            });
-        },
-        [isActiveRequest],
-    );
-
-    const captureInterruptedMessage = useCallback(
-        (activeStream: ActiveStream) => {
-            if (activeStream.interruptedCaptured || activeStream.parts.length === 0) {
-                return;
-            }
-
-            activeStream.interruptedCaptured = true;
-            const parts = [...activeStream.parts];
-            const fullText = parts
-                .filter((p) => p.type === 'text')
-                .map((p) => p.text)
-                .join('');
-
-            updateMessages((prev) => [
-                ...prev,
-                {
-                    id: crypto.randomUUID(),
-                    role: 'assistant',
-                    mode: activeStream.mode,
-                    model: activeStream.model,
-                    content: fullText,
-                    parts,
-                    interrupted: true,
-                },
-            ]);
-        },
-        [updateMessages],
-    );
-
-    const clearStream = useCallback(
-        (requestId: string) => {
-            if (!isActiveRequest(requestId)) return;
-
-            activeStreamRef.current = null;
-            setStreaming({ status: 'idle' });
-        },
-        [isActiveRequest],
-    );
-
-    const handleStream = useCallback(
-        async (response: ClientResponse<unknown>, activeStream: ActiveStream) => {
-            if (!isActiveRequest(activeStream.requestId)) return;
-
-            if (!response.ok) {
-                const message = await getErrorMessage(response);
-
-                updateMessages((prev) => [
-                    ...prev,
-                    {
-                        id: crypto.randomUUID(),
-                        role: 'error',
-                        content: message,
+                return {
+                    body: {
+                        id: sessionId,
+                        messages: requestMessage,
+                        mode: message.metadata?.mode ?? metadata?.mode,
+                        model: message.metadata?.model ?? metadata?.model,
                     },
-                ]);
-                return;
-            }
-
-            const parts: ClientMessagePart[] = [];
-
-            const stream = response
-                .body!.pipeThrough(new TextDecoderStream())
-                .pipeThrough(new EventSourceParserStream());
-
-            for await (const { data } of stream) {
-                if (!isActiveRequest(activeStream.requestId)) return;
-
-                let event;
-
-                try {
-                    event = chatStreamEventSchema.parse(JSON.parse(data));
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : 'Invalid stream event';
-                    updateMessages((prev) => [
-                        ...prev,
-                        {
-                            id: crypto.randomUUID(),
-                            role: 'error',
-                            content: message,
-                        },
-                    ]);
-
-                    break;
-                }
-
-                switch (event.type) {
-                    case 'reasoning-delta': {
-                        const last = parts[parts.length - 1];
-                        if (last && last.type === 'reasoning') {
-                            last.text += event.text;
-                        } else {
-                            parts.push({ type: 'reasoning', text: event.text });
-                        }
-
-                        emitParts(activeStream.requestId, parts);
-                        break;
-                    }
-
-                    case 'tool-call': {
-                        parts.push({
-                            type: 'tool-call',
-                            id: event.toolCallId,
-                            name: event.toolName,
-                            args: event.args,
-                            status: 'calling',
-                        });
-
-                        emitParts(activeStream.requestId, parts);
-                        break;
-                    }
-
-                    case 'tool-call-result': {
-                        const toolCall = parts.find(
-                            (p): p is ClientToolCallPart =>
-                                p.type === 'tool-call' && p.id === event.toolCallId,
-                        );
-
-                        if (toolCall) {
-                            toolCall.result = event.result;
-                            toolCall.status = 'done';
-                        }
-
-                        emitParts(activeStream.requestId, parts);
-                        break;
-                    }
-
-                    case 'text-delta': {
-                        const last = parts[parts.length - 1];
-                        if (last && last.type === 'text') {
-                            last.text += event.text;
-                        } else {
-                            parts.push({ type: 'text', text: event.text });
-                        }
-                        emitParts(activeStream.requestId, parts);
-
-                        break;
-                    }
-
-                    case 'done': {
-                        if (!isActiveRequest(activeStream.requestId)) return;
-
-                        const fullText = parts
-                            .filter((part) => part.type === 'text')
-                            .map((part) => part.text)
-                            .join('');
-
-                        updateMessages((prev) => [
-                            ...prev,
-                            {
-                                id: event.messageId,
-                                role: 'assistant',
-                                content: fullText,
-                                mode: activeStream.mode,
-                                model: activeStream.model,
-                                duration: prettyMs(event.durationMs),
-                                parts: [...parts],
-                            },
-                        ]);
-
-                        break;
-                    }
-
-                    case 'error': {
-                        updateMessages((prev) => [
-                            ...prev,
-                            {
-                                id: crypto.randomUUID(),
-                                role: 'error',
-                                content: event.message,
-                            },
-                        ]);
-
-                        break;
-                    }
-                }
-            }
-        },
-        [updateMessages, isActiveRequest, emitParts],
-    );
-
-    const runStream = useCallback(
-        async ({ mode, model, request }: RunStreamParams) => {
-            const controller = new AbortController();
-            const activeStream: ActiveStream = {
-                requestId: crypto.randomUUID(),
-                controller,
-                mode,
-                model,
-                parts: [],
-                interruptedCaptured: false,
-            };
-
-            activeStreamRef.current = activeStream;
-
-            setStreaming({
-                status: 'streaming',
-                parts: [],
-                mode,
-                model,
-            });
-
-            try {
-                const response = await request(controller);
-                await handleStream(response, activeStream);
-            } catch (error) {
-                if (error instanceof DOMException && error.name === 'AbortError') {
-                    return;
-                }
-
-                if (!isActiveRequest(activeStream.requestId)) return;
-
-                const msg = error instanceof Error ? error.message : String(error);
-                updateMessages((prev) => [
-                    ...prev,
-                    {
-                        id: crypto.randomUUID(),
-                        role: 'error',
-                        content: msg,
-                    },
-                ]);
-            } finally {
-                clearStream(activeStream.requestId);
-            }
-        },
-        [clearStream, handleStream, isActiveRequest, updateMessages],
-    );
-
-    const stopActiveStream = useCallback(
-        (capturePartial: boolean) => {
-            const activeStream = activeStreamRef.current;
-            if (!activeStream) return;
-
-            if (capturePartial) {
-                captureInterruptedMessage(activeStream);
-            }
-
-            activeStreamRef.current = null;
-            setStreaming({ status: 'idle' });
-            activeStream.controller.abort();
-        },
-        [captureInterruptedMessage],
-    );
-
-    const resume = useCallback(
-        async ({ mode, model }: Omit<SubmitParams, 'userText'>) => {
-            await runStream({
-                mode,
-                model,
-                request: async (controller) => {
-                    return apiClient.chat[':sessionId'].resume.$post(
-                        { param: { sessionId } },
-                        { init: { signal: controller.signal } },
-                    );
-                },
-            });
-        },
-        [runStream, sessionId],
-    );
-
-    // Auto resumen cuanto la conversacion termina con un mensaje de usuario y no tiene replay
-    const hasAutoResumeRef = useRef(false);
-    useEffect(() => {
-        if (hasAutoResumeRef.current) return;
-
-        const last = initialMessages[initialMessages.length - 1];
-        if (!last || last.role !== 'user') return;
-
-        hasAutoResumeRef.current = true;
-
-        void resume({
-            mode: last.mode,
-            model: last.model,
+                };
+            },
         });
-    }, [initialMessages, resume]);
+    }, [sessionId]);
 
-    const submit = useCallback(
-        async ({ userText, model, mode }: SubmitParams) => {
-            // Muestra la respuesta parcial antes de enviar el proximo msg
-            stopActiveStream(true);
+    const chat = useAiChat<Message>({
+        id: sessionId,
+        messages: initialMessage,
+        transport,
+        onToolCall({ toolCall }) {
+            const mode = chat.messages.findLast((m) => m.metadata?.mode)?.metadata?.mode ?? 'BUILD';
 
-            const userMessage: Message = {
-                id: crypto.randomUUID(),
-                role: 'user',
-                content: userText,
-                mode,
-                model,
-            };
+            const toolName = toolCall.toolName as keyof ChatTools;
 
-            updateMessages((prev) => [...prev, userMessage]);
+            void executeLocalTool(toolCall.toolName, toolCall.input, mode)
+                .then((output) =>
+                    chat.addToolOutput({
+                        tool: toolCall.toolName as keyof ChatTools,
+                        toolCallId: toolCall.toolCallId,
+                        // TODO: Tipar executeLocalTool para preservar la relación entre el nombre de
+                        // la herramienta y su output. Actualmente devuelve una unión de todos los
+                        // resultados posibles, por lo que necesitamos este cast para satisfacer
+                        // chat.addToolOutput. La implementación ideal debe inferir el output según
+                        // el toolName recibido
+                        output: output as ChatTools[typeof toolName]['output'],
+                    }),
+                )
+                .catch((error) =>
+                    chat.addToolOutput({
+                        tool: toolCall.toolName as keyof ChatTools,
+                        toolCallId: toolCall.toolCallId,
+                        state: 'output-error',
+                        errorText: error instanceof Error ? error.message : String(error),
+                    }),
+                );
+        },
+        sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    });
 
-            await runStream({
-                mode,
-                model,
-                request: async (controller) => {
-                    return apiClient.chat[':sessionId'].$post(
-                        {
-                            param: { sessionId },
-                            json: { content: userText, mode, model },
-                        },
-                        {
-                            init: { signal: controller.signal },
-                        },
-                    );
+    return {
+        messages: chat.messages,
+        status: chat.status,
+        error: chat.error,
+        submit: (params: { userText: string; mode: ModeType; model: SupportedChatModelId }) => {
+            return chat.sendMessage({
+                text: params.userText,
+                metadata: {
+                    mode: params.mode,
+                    model: params.model,
                 },
             });
         },
-        [runStream, sessionId, updateMessages, stopActiveStream],
-    );
-
-    const abort = useCallback(() => {
-        stopActiveStream(false);
-    }, [stopActiveStream]);
-
-    const interrupt = useCallback(() => {
-        stopActiveStream(true);
-    }, [stopActiveStream]);
-
-    return { messages, streaming, submit, abort, interrupt };
+        abort: chat.stop,
+        interrupt: chat.stop,
+    };
 }

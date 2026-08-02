@@ -1,14 +1,13 @@
-import "opentui-spinner/react";
-import { useTheme } from "../providers/theme";
-import { Mode } from "@whalincode/database/enums";
-
+import 'opentui-spinner/react';
+import { useTheme } from '../providers/theme';
+import { Mode, type ModeType } from '@whalincode/shared';
 type Props = {
-    mode?: Mode;
-}
+    mode?: ModeType;
+};
 
 export function Spinner({ mode = Mode.BUILD }: Props) {
     const { colors } = useTheme();
-    const activeColor = mode === Mode.PLAN ? colors.planMode : colors.primary
+    const activeColor = mode === Mode.PLAN ? colors.planMode : colors.primary;
 
-    return <spinner name='aesthetic' color={activeColor} />;
+    return <spinner name="aesthetic" color={activeColor} />;
 }

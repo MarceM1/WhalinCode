@@ -1,11 +1,10 @@
-import { Mode } from '@whalincode/database/enums';
+import { Mode, type ModeType } from '@whalincode/shared';
 
-type SystemPrompt = {
-    cwd: string | null;
-    mode: Mode;
+type SystemPromptParams = {
+    mode: ModeType;
 };
 
-export function buildSystemPrompt({ cwd, mode }: SystemPrompt): string {
+export function buildSystemPrompt({ mode }: SystemPromptParams): string {
     const parts: string[] = [];
 
     parts.push(`You are WhalinCode, an AI software engineering agent operating inside a
@@ -23,11 +22,7 @@ export function buildSystemPrompt({ cwd, mode }: SystemPrompt): string {
         - **BUILD** — Full implementation. Read-write tools are available and file modifications are allowed.    
     `);
 
-    if (cwd) {
-        parts.push(`\nThe user's project directory is: ${cwd}`);
-    }
-
-    if (mode === 'PLAN') {
+    if (mode === Mode.PLAN) {
         parts.push(`
             ## Operating Mode: PLAN
 

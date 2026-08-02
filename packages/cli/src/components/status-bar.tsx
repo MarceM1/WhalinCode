@@ -1,14 +1,14 @@
-import {TextAttributes} from "@opentui/core";
-import { useTheme } from "../providers/theme";
-import { usePromptConfig } from "../providers/prompt-config";
-import { Mode } from "@whalincode/database/enums";
+import { TextAttributes } from '@opentui/core';
+import { useTheme } from '../providers/theme';
+import { usePromptConfig } from '../providers/prompt-config';
+import { Mode } from '@whalincode/shared';
 
 export function Statusbar() {
-    const {mode, model} = usePromptConfig();
-    const {colors}= useTheme();
+    const { mode, model } = usePromptConfig();
+    const { colors } = useTheme();
 
     return (
-        <box flexDirection='row' gap={1}>
+        <box flexDirection="row" gap={1}>
             <text fg={mode === Mode.PLAN ? colors.planMode : colors.primary}>
                 {mode === Mode.PLAN ? 'Plan' : 'Build'}
             </text>
@@ -17,5 +17,5 @@ export function Statusbar() {
             </text>
             <text>{model}</text>
         </box>
-    )
+    );
 }

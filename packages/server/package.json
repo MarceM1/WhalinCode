@@ -23,7 +23,7 @@
         "@sentry/hono": "^10.56.0",
         "@whalincode/database": "workspace:*",
         "@whalincode/shared": "workspace:*",
-        "ai": "^6.0.199",
+        "ai": "^7.0.37",
         "dotenv": "^17.4.2",
         "hono": "^4.12.23",
         "zod": "^4.4.3"

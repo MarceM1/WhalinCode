@@ -1,10 +1,9 @@
-import type { Mode } from "@whalincode/database/enums";
-import type { DialogContextValue } from "../../providers/dialog";
-import type { ToastContextValue } from "../../providers/toast";
-import type { SupportedChatModelId } from "@whalincode/shared";
+import type { DialogContextValue } from '../../providers/dialog';
+import type { ToastContextValue } from '../../providers/toast';
+import type { ModeType, SupportedChatModelId } from '@whalincode/shared';
 
 export type CommandContext = {
-       exit: () => void;
+    exit: () => void;
 
     /** navigation capability */
     navigate: (path: string) => void;
@@ -16,8 +15,8 @@ export type CommandContext = {
     dialog: DialogContextValue;
 
     /** prompt config system */
-    mode: Mode;
-    setMode: (mode: Mode) => void;
+    mode: ModeType;
+    setMode: (mode: ModeType) => void;
     setModel: (model: SupportedChatModelId) => void;
 };
 export type Command = {
