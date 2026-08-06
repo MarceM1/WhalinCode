@@ -10,6 +10,29 @@ Cada módulo implementado constituye un paso más hacia la comprensión completa
 
 ---
 
+## Índice
+
+- [Filosofía](#filosofía)
+- [Objetivo](#objetivo)
+- [Descripción arquitectónica](#descripción-arquitectónica)
+- [Estado actual](#estado-actual)
+- [Configuración de desarrollo](#configuración-de-desarrollo)
+- [Arquitectura](#arquitectura)
+- [Modelos soportados](#modelos-soportados)
+- [Herramientas del agente](#herramientas-del-agente)
+- [Context Optimization Strategy](#context-optimization-strategy)
+- [Slash Commands](#slash-commands)
+- [Flujo del runtime](#flujo-del-runtime)
+- [Variables de entorno](#variables-de-entorno)
+- [Scripts](#scripts)
+- [Conceptos arquitectónicos explorados](#conceptos-arquitectónicos-explorados)
+- [Observaciones arquitectónicas](#observaciones-arquitectónicas)
+- [Architectural Evolution Guidelines](#architectural-evolution-guidelines)
+- [Próximas etapas](#próximas-etapas)
+- [Objetivo a largo plazo](#objetivo-a-largo-plazo)
+
+---
+
 ## Filosofía
 
 WhalinCode se desarrolla siguiendo algunos principios simples:
@@ -21,6 +44,8 @@ WhalinCode se desarrolla siguiendo algunos principios simples:
 - desarrollar criterio arquitectónico mediante implementación incremental
 
 El objetivo no es únicamente escribir código funcional, sino comprender las decisiones de diseño que dieron origen a las arquitecturas modernas de agentes.
+
+↑ [Índice](#índice)
 
 ---
 
@@ -37,7 +62,7 @@ Comprender cómo funcionan internamente los coding agents modernos mediante:
 
 ---
 
-## Architecture Overview
+## Descripción arquitectónica
 
 WhalinCode está compuesto por múltiples runtimes especializados que colaboran para completar una interacción entre el usuario y el modelo.
 
@@ -77,6 +102,8 @@ El **Agent Runtime** coordina la interacción entre los distintos sistemas espec
 - **LLM Providers** aportan las capacidades de razonamiento del modelo.
 
 Esta separación permite que cada runtime evolucione de forma independiente, manteniendo responsabilidades bien definidas y límites claros entre la infraestructura remota y el entorno local del usuario.
+
+↑ [Índice](#índice)
 
 ---
 
@@ -156,6 +183,80 @@ El objetivo es evitar cargar información completa del workspace cuando solo una
 - Prisma + PostgreSQL (Neon) con adapter `@prisma/adapter-pg`
 - Sentry Integration (error handling + structured logging)
 - Env Validation (Zod schemas en CLI y Server)
+
+↑ [Índice](#índice)
+
+---
+
+## Configuración de desarrollo
+
+### Requisitos previos
+
+Antes de ejecutar WhalinCode localmente, asegúrate de tener instalados los siguientes requisitos:
+
+- [Bun](https://bun.com/docs/installation) (instalación oficial)
+- [Git](https://git-scm.com/install/) (instalación oficial)
+
+> **Nota:** El CLI depende del mecanismo de vinculación global de Bun (`bun link`). Se recomienda instalar Bun mediante el instalador oficial, ya que métodos de instalación alternativos podrían no configurar correctamente la ruta del binario global.
+
+### Clonar el repositorio
+
+```bash
+git clone https://github.com/MarceM1/WhalinCode.git
+cd whalincode
+```
+
+### Instalar dependencias
+
+Desde la raíz del repositorio:
+
+```bash
+bun install
+```
+
+### Configurar el entorno
+
+Crea un archivo `.env` en la raiz del repositorio.
+Como mínimo, configura el CLI para conectarse con el servidor local:
+
+```js
+API_URL=http://localhost:8787
+```
+
+Luego configura las [variables de entorno](#variables-de-entorno) restantes requeridas por el servidor (claves de API, base de datos, proveedores de autenticación, etc.)
+
+### Iniciar el servidor
+
+```bash
+bun run dev:server
+```
+
+El servidor debe estar ejecutándose antes de iniciar el CLI.
+
+### Vincular el CLI
+
+Desde la raíz del repositorio:
+
+```bash
+bun run link:cli
+```
+
+Esto registra el comando whalincode globalmente en tu máquina.
+
+### Ejecutar
+
+Una vez que el servidor esté ejecutándose y el CLI haya sido vinculado:
+
+```bash
+whalincode
+```
+
+El CLI se conectará al servidor local utilizando el valor de API_URL definido en el archivo .env.
+
+> **Estado actual:** En esta etapa, WhalinCode está orientado al desarrollo local. El CLI se comunica con un servidor ejecutándose localmente
+> y todavía no existe un endpoint público de producción disponible.
+
+↑ [Índice](#índice)
 
 ---
 
@@ -310,6 +411,8 @@ Fuente única de verdad para:
 - **Models** — Definiciones de modelos soportados con pricing por provider
 - **`getToolContracts(mode)`** — Resolución dinámica de herramientas según el modo activo
 
+↑ [Índice](#índice)
+
 ---
 
 ## Modelos soportados
@@ -325,6 +428,8 @@ Fuente única de verdad para:
 | `gpt-5.4-nano`                  | OpenAI    | $0.2                 | $1.25                 |
 
 Thinking/reasoning habilitado para `claude-opus-4-6`, `claude-sonnet-4-6` y `gpt-5.4`.
+
+↑ [Índice](#índice)
 
 ---
 
@@ -359,6 +464,8 @@ Las herramientas se ejecutan localmente en el CLI. La ejecución incluye:
 - Filtrado de archivos binarios
 - Detección de shell compatible en Windows (Git Bash)
 - Timeout configurable para comandos bash (30s por defecto)
+
+↑ [Índice](#índice)
 
 ---
 
@@ -412,6 +519,16 @@ readFile({
 30 líneas relevantes
 ```
 
+> **Ejemplo de recuperación de contexto:**
+>
+> Lectura completa del archivo:
+> 500 líneas → ~5000 tokens
+>
+> Recuperación progresiva:
+> 30 líneas relevantes → ~300 tokens
+>
+> ≈ 94% de reducción en el contexto transferido al modelo
+
 ### Beneficios esperados
 
 - Menor consumo de input tokens
@@ -419,6 +536,8 @@ readFile({
 - Mayor ventana disponible para razonamiento
 - Menor ruido contextual
 - Mejor escalabilidad en proyectos grandes
+
+↑ [Índice](#índice)
 
 ---
 
@@ -463,6 +582,8 @@ Persistence (Prisma → Neon PostgreSQL)
 Usage Metering (Polar ingestion)
 ```
 
+↑ [Índice](#índice)
+
 ---
 
 ## Variables de entorno
@@ -490,6 +611,8 @@ Usage Metering (Polar ingestion)
 | `API_URL`               | URL del servidor API  |
 | `CLERK_FRONTEND_API`    | Frontend API de Clerk |
 | `CLERK_OAUTH_CLIENT_ID` | Client ID de OAuth    |
+
+↑ [Índice](#índice)
 
 ---
 
@@ -539,6 +662,8 @@ Hasta el momento el proyecto estudia e implementa:
 - End-to-End Type Safety (Hono RPC)
 - Provider Abstraction
 ```
+
+↑ [Índice](#índice)
 
 ---
 
@@ -664,6 +789,8 @@ El objetivo es construir una arquitectura donde:
 
 La calidad de un coding agent dependerá de cómo estos sistemas colaboran entre sí.
 
+↑ [Índice](#índice)
+
 ---
 
 ## Próximas etapas
@@ -691,6 +818,8 @@ Las siguientes fases del proyecto se enfocarán en mejorar la eficiencia, autono
 
 - Runtime Telemetry
 - Sandboxed Execution
+
+↑ [Índice](#índice)
 
 ---
 
